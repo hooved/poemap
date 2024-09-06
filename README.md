@@ -1,0 +1,1 @@
+Given a subset of a map around its entrance point, predict the overall map (layout).

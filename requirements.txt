@@ -1,0 +1,5 @@
+git+https://github.com/tinygrad/tinygrad.git
+Pillow
+opencv-python
+scikit-image
+scipy

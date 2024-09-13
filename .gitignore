@@ -1,4 +1,5 @@
 venv/
 data/
+.vscode/
 .ipynb_checkpoints/
 etc.ipynb

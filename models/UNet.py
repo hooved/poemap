@@ -78,7 +78,7 @@ class UNet:
       loss = jit_step()
       if step%5 == 0:
         Tensor.training = False
-        X_test, Y_test = dl.get_batch(batch_size)
+        X_test, Y_test = self.dl.get_batch(batch_size)
         acc = (self.__call__(X_test).argmax(axis=1) == Y_test).mean().item()
         print(f"step {step:4d}, loss {loss.item():.2f}, acc {acc*100.:.2f}%")
 

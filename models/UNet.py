@@ -17,6 +17,28 @@ def doubleconv(in_chan, out_chan):
   return [Conv2d(in_chan, out_chan, kernel_size=3, padding=1), BatchNorm2d(out_chan), Tensor.relu,
     Conv2d(out_chan, out_chan, kernel_size=3, padding=1), BatchNorm2d(out_chan), Tensor.relu]
 
+def multiclass_dice_loss(preds, targets, smooth=1e-6):
+    """
+    Args:
+        preds (Tensor): Predicted logits with shape [batch, num_classes, H, W].
+        targets (Tensor): Ground truth labels with shape [batch, H, W].
+    Returns:
+        Tensor: Dice Loss.
+    """
+    num_classes = preds.shape[1]
+    preds = preds.softmax(axis=1)
+    targets_one_hot = targets.one_hot(num_classes=num_classes)  # Shape: [batch, H, W, num_classes]
+    targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()  # Shape: [batch, num_classes, H, W]
+    preds_flat = preds.view(preds.shape[0], preds.shape[1], -1)
+    targets_flat = targets_one_hot.view(targets_one_hot.shape[0], targets_one_hot.shape[1], -1)
+
+    intersection = (preds_flat * targets_flat).sum(axis=2)
+    numerator = 2.0 * intersection + smooth
+    denominator = preds_flat.sum(axis=2) + targets_flat.sum(axis=2) + smooth
+    dice_score = numerator / denominator
+    dice_loss = 1 - dice_score.mean()
+    return dice_loss
+
 class UNet:
   def __init__(self, model_name):
     self.model_name = model_name
@@ -68,6 +90,14 @@ class UNet:
       optim.zero_grad()
       pred = self.__call__(X)
       s = pred.shape
+
+      # uncomment this block to incorporate dice loss
+      #loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
+      #weight = 1
+      #combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
+      #optim.step()
+      #return combined_loss
+
       # Need to flatten for cross_entropy to work
       loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)).backward()
       optim.step()

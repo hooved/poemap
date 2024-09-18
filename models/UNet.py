@@ -136,8 +136,8 @@ class UNet:
     return result
 
 class UNet2(UNet):
-  def __init__(self):
-    super().__init__()
+  def __init__(self, model_name):
+    super().__init__(model_name)
     self.save_intermediates += [self.middle[0:1 + 6]]
     self.middle = [
       Tensor.max_pool2d, *doubleconv(256, 512),

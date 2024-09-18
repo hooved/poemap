@@ -11,6 +11,7 @@ Adapted from:
 https://github.com/milesial/Pytorch-UNet
 https://github.com/tinygrad/tinygrad/examples/stable_diffusion.py
 https://docs.tinygrad.org/mnist/
+https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py
 """
 
 def doubleconv(in_chan, out_chan):
@@ -145,3 +146,38 @@ class UNet2(UNet):
     self.consume_intermediates = [
       [*doubleconv(512, 256), ConvTranspose2d(256, 128, kernel_size=2, stride=2)],
     ] + self.consume_intermediates
+
+class AttentionBlock:
+  def __init__(self, g_chan, l_chan, int_chan):
+    self.W_g = [Conv2d(g_chan, int_chan, 1, stride=1), BatchNorm2d(int_chan)]
+    self.W_x = [Conv2d(l_chan, int_chan, 1, stride=1), BatchNorm2d(int_chan)]
+    self.psi = [Conv2d(int_chan, 1, 1, stride=1), BatchNorm2d(1), Tensor.sigmoid]
+
+  def __call__(self, g: Tensor, x: Tensor):
+    psi = Tensor.relu(g.sequential(self.W_g) + x.sequential(self.W_x))
+    psi = psi.sequential(self.psi)
+    return x * psi
+
+class AttentionUNet(UNet):
+  def __init__(self, model_name):
+    super().__init__(model_name)
+    self.attention_blocks = [
+      AttentionBlock(128, 128, 64),
+      AttentionBlock(64, 64, 32),
+    ]
+
+  def __call__(self, x):
+    intermediates = []
+    for b in self.save_intermediates:
+      for bb in b:
+        x = bb(x)
+      intermediates.append(x)
+    for bb in self.middle:
+      x = bb(x)
+    for i, b in enumerate(self.consume_intermediates):
+      intermediate = intermediates.pop()
+      intermediate = self.attention_blocks[i](x, intermediate)
+      x = intermediate.cat(x, dim=1)
+      for bb in b:
+        x = bb(x)
+    return x

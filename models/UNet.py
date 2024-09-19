@@ -41,23 +41,31 @@ def multiclass_dice_loss(preds, targets, smooth=1e-6):
     return dice_loss
 
 class UNet:
-  def __init__(self, model_name):
+  def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
     self.model_name = model_name
     self.dl = DataLoader(
-      image_dir="data/auto_crop",
-      mask_dir="data/mask",
+      #image_dir="data/auto_crop",
+      #mask_dir="data/mask",
+      image_dir="data/auto_crop_50",
+      mask_dir="data/mask_50",
     )
     self.save_intermediates = [
-      doubleconv(3, 64), 
-      [Tensor.max_pool2d, *doubleconv(64, 128)],
-    ]
-    self.middle = [
-      Tensor.max_pool2d, *doubleconv(128, 256),
-      ConvTranspose2d(256, 128, kernel_size=2, stride=2),
+      doubleconv(in_chan, mid_chan), 
     ]
     self.consume_intermediates = [
-      [*doubleconv(256, 128), ConvTranspose2d(128, 64, kernel_size=2, stride=2)],
-      [*doubleconv(128, 64), Conv2d(64, 2, kernel_size=1)],
+      [*doubleconv(mid_chan * 2, mid_chan), Conv2d(mid_chan, out_chan, kernel_size=1)],
+    ]
+
+    for i in range(depth-1):
+      self.save_intermediates += [[Tensor.max_pool2d, *doubleconv(mid_chan * 2**i, mid_chan * 2**(i+1))]]
+      self.consume_intermediates = [
+          [*doubleconv(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
+          ConvTranspose2d(mid_chan * 2**(i+1), mid_chan * 2**i, kernel_size=2, stride=2)]
+        ] + self.consume_intermediates
+
+    self.middle = [
+      Tensor.max_pool2d, *doubleconv(mid_chan * 2**(depth-1), mid_chan * 2**depth),
+      ConvTranspose2d(mid_chan * 2**depth, mid_chan * 2**(depth-1), kernel_size=2, stride=2),
     ]
 
   def __call__(self, x):
@@ -74,15 +82,17 @@ class UNet:
         x = bb(x)
     return x
 
-  @classmethod
-  def load(cls, model_name):
-    state_dict = safe_load(f"data/model/{model_name}.safetensors")
-    model = cls(model_name)
-    load_state_dict(model, state_dict)
-    return model
+  #@classmethod
+  #def load(cls, model_name):
+  def load(self):
+    state_dict = safe_load(f"data/model/{self.model_name}.safetensors")
+    #model = cls(model_name)
+    load_state_dict(self, state_dict)
+    #return model
+    return self
 
-  def train(self, patch_size: Optional[Tuple[int]]=(64,64), batch_size: Optional[int]=64,
-            steps: Optional[int]=200):
+  def train(self, patch_size: Optional[Tuple[int]]=(64,64), batch_size: Optional[int]=128,
+            steps: Optional[int]=500):
     self.dl.patch_size = patch_size
     optim = nn.optim.Adam(nn.state.get_parameters(self))
     def step():
@@ -93,11 +103,11 @@ class UNet:
       s = pred.shape
 
       # uncomment this block to incorporate dice loss
-      #loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
-      #weight = 1
-      #combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
-      #optim.step()
-      #return combined_loss
+      loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
+      weight = 1
+      combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
+      optim.step()
+      return combined_loss
 
       # Need to flatten for cross_entropy to work
       loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)).backward()
@@ -159,8 +169,8 @@ class AttentionBlock:
     return x * psi
 
 class AttentionUNet(UNet):
-  def __init__(self, model_name):
-    super().__init__(model_name)
+  def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
+    super().__init__(model_name, in_chan=in_chan, mid_chan=mid_chan, out_chan=out_chan, depth=depth)
     self.attention_blocks = [
       AttentionBlock(128, 128, 64),
       AttentionBlock(64, 64, 32),

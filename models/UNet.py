@@ -82,13 +82,9 @@ class UNet:
         x = bb(x)
     return x
 
-  #@classmethod
-  #def load(cls, model_name):
   def load(self):
     state_dict = safe_load(f"data/model/{self.model_name}.safetensors")
-    #model = cls(model_name)
     load_state_dict(self, state_dict)
-    #return model
     return self
 
   def train(self, patch_size: Optional[Tuple[int]]=(64,64), batch_size: Optional[int]=128,
@@ -159,10 +155,11 @@ class AttentionBlock:
 class AttentionUNet(UNet):
   def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
     super().__init__(model_name, in_chan=in_chan, mid_chan=mid_chan, out_chan=out_chan, depth=depth)
-    self.attention_blocks = [
-      AttentionBlock(128, 128, 64),
-      AttentionBlock(64, 64, 32),
-    ]
+
+    self.attention_blocks = []
+    for i in range(depth):
+      input_chan = mid_chan * 2**i
+      self.attention_blocks = [AttentionBlock(input_chan, input_chan, input_chan//2)] + self.attention_blocks
 
   def __call__(self, x):
     intermediates = []

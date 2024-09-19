@@ -1,1 +1,1 @@
-from .UNet import UNet, UNet2, AttentionUNet
+from .UNet import UNet, AttentionUNet

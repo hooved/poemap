@@ -145,18 +145,6 @@ class UNet:
     result = self.dl.synthesize_image_from_chunks(result, (*original_shape[0:2], 1)).squeeze(-1)
     return result
 
-class UNet2(UNet):
-  def __init__(self, model_name):
-    super().__init__(model_name)
-    self.save_intermediates += [self.middle[0:1 + 6]]
-    self.middle = [
-      Tensor.max_pool2d, *doubleconv(256, 512),
-      ConvTranspose2d(512, 256, kernel_size=2, stride=2),
-    ]
-    self.consume_intermediates = [
-      [*doubleconv(512, 256), ConvTranspose2d(256, 128, kernel_size=2, stride=2)],
-    ] + self.consume_intermediates
-
 class AttentionBlock:
   def __init__(self, g_chan, l_chan, int_chan):
     self.W_g = [Conv2d(g_chan, int_chan, 1, stride=1), BatchNorm2d(int_chan)]

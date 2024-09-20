@@ -4,3 +4,4 @@ data/
 .ipynb_checkpoints/
 etc.ipynb
 __pycache__/
+stream/venv_send

@@ -1,2 +1,4 @@
+keyboard
+numpy
 pillow
 pyautogui

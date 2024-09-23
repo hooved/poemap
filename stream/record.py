@@ -27,12 +27,24 @@ def stream_frames(target_fps=2):
     frames.append(frame)
     print(f"{len(frames)} frames")
 
+    if len(frames) == 32:
+      stop_stream = True
+
+    if len(frames) % 8 == 0:
+      minimap = frames_to_map(np.array(frames))
+      #mask = map_to_mask(minimap)
+      cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
+      cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
+      #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
+      cv2.imshow('Overlay', minimap)
+      cv2.waitKey(1)
+
     if stop_stream or stop_program:
       print("Stopping stream...")
-      print(f"number of frames: {len(frames)}")
-      frames = np.array(frames)
-      minimap = frames_to_map(frames)
-      Image.fromarray(minimap).save("minimap.png")
+      cv2.destroyAllWindows()
+      #print(f"number of frames: {len(frames)}")
+      #minimap = frames_to_map(np.array(frames))
+      #Image.fromarray(minimap).save("minimap.png")
       return
 
     elapsed = time.perf_counter() - last_capture_time

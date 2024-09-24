@@ -1,6 +1,7 @@
 import pyautogui
 import keyboard
-import time, os, sys
+import time, os, sys, socket
+from comms import send_array
 import numpy as np
 import cv2
 from PIL import Image
@@ -120,6 +121,13 @@ def trigger_stop_program():
   stop_program = True
 
 if __name__=="__main__":
+  client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+  client.connect(('localhost', 50000))
+  array = np.array(Image.open("minimap.png"))
+  send_array(client, array)
+  client.close()
+  sys.exit()
+
   # using global vars because keyboard doesn't allow triggering one hotkey's callback during another
   stop_stream = True
   stop_program = False

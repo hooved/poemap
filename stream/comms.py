@@ -12,10 +12,10 @@ def receive_exact(sock, n):
 
 def send_array(sock, array: np.ndarray):
   # send number of dims, then size of each dim, then the array data
-  sock.send(len(array.shape.to_bytes(4, byteorder="big")))
+  sock.send(len(array.shape).to_bytes(4, byteorder="big"))
   for dim in array.shape:
     sock.send(dim.to_bytes(4, byteorder="big"))
-  sock.sendall(array.to_bytes())
+  sock.sendall(array.tobytes())
 
 def receive_array(sock):
   ndims = int.from_bytes(receive_exact(sock, 4), byteorder="big")

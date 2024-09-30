@@ -1,7 +1,7 @@
-import pyautogui
-import keyboard
+#import pyautogui
+#import keyboard
 import time, os, sys, socket
-from comms import send_array
+from .comms import send_array
 import numpy as np
 import cv2
 from PIL import Image
@@ -106,7 +106,8 @@ def draw_minimap(video, movement):
   minimap = np.zeros((H, W, C), dtype=np.uint8)
   for frame, (x, y) in zip(video, current_position):
     minimap[y_start + y:y_start + y + H_frame, x_start + x:x_start + x + W_frame] = frame
-  return minimap
+  origin = (y_start + H_frame // 2, x_start + W_frame // 2)
+  return minimap, origin
 
 def trigger_start_stream():
   global stop_stream

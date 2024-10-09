@@ -5,3 +5,4 @@ data/
 etc.ipynb
 __pycache__/
 stream/venv_client
+debug*

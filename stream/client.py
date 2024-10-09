@@ -53,12 +53,16 @@ def stream_frames(target_fps=2):
       time.sleep(frame_time - elapsed)
 
 def frames_to_map(frames):
+  moves = get_moves(frames)
+  return draw_minimap(frames, moves)
+
+def get_moves(frames):
   moves = [(0,0)]
   for i, frame in enumerate(frames[1:]):
       move = find_translation(frames[i], frame)
       moves.append(move)
   moves = np.round(np.array(moves)).astype(int)
-  return draw_minimap(frames, moves)
+  return moves
 
 # From https://github.com/kweimann/poe-learning-layouts/blob/main/utils/data.py, MIT License
 def find_translation(image_a, image_b, threshold=0.7, max_matches=15):

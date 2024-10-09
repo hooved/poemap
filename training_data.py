@@ -1,4 +1,4 @@
-import os, importlib, sys
+import os, importlib, sys, math
 from collections import defaultdict
 from stream.client import draw_minimap, frames_to_map, get_moves
 import numpy as np
@@ -47,8 +47,6 @@ def prepare_training_data(data_dir, model):
       minimap = get_patches(minimap, origin)
       minimap = get_tokens(minimap)
       np.savez_compressed(os.path.join(instance, f"{o_id}.npz"), data=minimap)
-      yield minimap
-    break
 
 def crop_to_content(image):
   white_pixels = np.argwhere(image == 1)
@@ -93,8 +91,6 @@ def extract_map_features(image, origin, model):
   pred = clean_sparse_pixels(pred, threshold=20, neighborhood_size=40)
   pred, offsets = crop_to_content(pred)
   origin = tuple(int(val - offset) for val, offset in zip(origin, offsets))
-  #pred, origin = pad_with_origin(pred.reshape(*pred.shape, 1), origin, 32)
-  #pred = pred.reshape(*pred.shape[:-1])
   return pred, origin
 
 # Chunk the map into square patches, label each patch with y,x positions relative to origin
@@ -103,10 +99,16 @@ def get_patches(array, origin, ps=32):
   assert len(array.shape) == 2
   Y, X = array.shape
   # calc num patches in each direction from origin
+  # make partial patches complete with empty padding
   y, x = origin
-  up, down = y//ps, (Y-y)//ps
-  left, right = x//ps, (X-x)//ps
-  patches = array[y-ps*up : y+ps*down, x-ps*left : x+ps*right]
+  up, down = math.ceil(y/ps), math.ceil((Y-y)/ps)
+  pad_up, pad_down = (up*ps - y), (down*ps - (Y-y))
+  y += pad_up
+  left, right = math.ceil(x/ps), math.ceil((X-x)/ps)
+  pad_left, pad_right = (left*ps - x), (right*ps - (X-x))
+  x += pad_left
+  patches = np.pad(array, ((pad_up, pad_down), (pad_left, pad_right)), mode='constant')
+
   # calc patch y,x dims for each pixel, relative to origin patch
   indices = np.indices(patches.shape).transpose(1,2,0)
   indices = indices // ps - np.array([up, left])
@@ -130,11 +132,4 @@ if __name__=="__main__":
 
   model = AttentionUNet("AttentionUNet_4")
   model.load()
-  gen = prepare_training_data("data/train", model)
-  while True:
-    tokens = next(gen, -1)
-    if isinstance(tokens, int) and tokens == -1:
-      break
-
-  done = 1
-
+  prepare_training_data("data/train", model)

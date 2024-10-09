@@ -41,25 +41,13 @@ def prepare_training_data(data_dir, model):
       tf_idx = next((i for i, tpl in enumerate(frames) if tpl[0]==tf_id), -1)
       frames_subset = np.array([f for fid, f in frames][0:tf_idx + 1])
       minimap, origin = draw_minimap(frames_subset, moves[0:tf_idx + 1])
-
-      # shrink image, recalculate origin
-      dims = minimap.shape[0:2]
-      max_dim_idx = dims.index(max(dims))
-      new_size = dims[max_dim_idx] // 2
-      origin = tuple(int(x * new_size / max(dims)) for x in origin)
-      minimap = shrink_image(minimap, new_size)
-      # pad image, use mask to track origin position
-      mask = np.zeros((*minimap.shape[0:2], 1))
-      mask[origin] = 1
-      minimap = np.concatenate([minimap, mask], axis=-1)
-      minimap = pad_to_square_multiple(minimap, 32)
-      origin = np.where(minimap[..., 3] == 1)
-      origin = tuple(int(x[0]) for x in origin)
-      minimap = minimap[:,:,0:3].astype(np.uint8)
-      clean, clean_origin = extract_map_features(minimap, origin, model)
-      yield clean, clean_origin
-      #yield minimap, origin
-      #break
+      minimap, origin = extract_map_features(minimap, origin, model)
+      o_id = get_frame_id(target_frame)
+      Image.fromarray(minimap * 255, mode="L").save(os.path.join(instance, f"{o_id}o.png"))
+      minimap = get_patches(minimap, origin)
+      minimap = get_tokens(minimap)
+      np.savez_compressed(os.path.join(instance, f"{o_id}.npz"), data=minimap)
+      yield minimap
     break
 
 def crop_to_content(image):
@@ -82,19 +70,71 @@ def clean_sparse_pixels(image, threshold=3, neighborhood_size=3):
   cleaned_image = image * mask
   return cleaned_image
 
+def pad_with_origin(minimap, origin, pad_multiple):
+  # pad image, use mask to track origin position
+  mask = np.zeros((*minimap.shape[0:2], 1))
+  mask[origin] = 1
+  minimap = np.concatenate([minimap, mask], axis=-1)
+  minimap = pad_to_square_multiple(minimap, pad_multiple)
+  origin = np.where(minimap[..., -1] == 1)
+  origin = tuple(int(x[0]) for x in origin)
+  minimap = minimap[:,:,0:-1].astype(np.uint8)
+  return minimap, origin
+
 def extract_map_features(image, origin, model):
-  pred = model.batch_inference(image, chunk_size=32)
+  # shrink image, recalculate origin
+  dims = image.shape[0:2]
+  max_dim_idx = dims.index(max(dims))
+  new_size = dims[max_dim_idx] // 2
+  origin = tuple(int(x * new_size / max(dims)) for x in origin)
+  minimap = shrink_image(image, new_size)
+  minimap, origin = pad_with_origin(minimap, origin, 32)
+  pred = model.batch_inference(minimap, chunk_size=32)
   pred = clean_sparse_pixels(pred, threshold=20, neighborhood_size=40)
   pred, offsets = crop_to_content(pred)
   origin = tuple(int(val - offset) for val, offset in zip(origin, offsets))
+  #pred, origin = pad_with_origin(pred.reshape(*pred.shape, 1), origin, 32)
+  #pred = pred.reshape(*pred.shape[:-1])
   return pred, origin
+
+# Chunk the map into square patches, label each patch with y,x positions relative to origin
+# We will use the y,x positions for token position embeddings
+def get_patches(array, origin, ps=32):
+  assert len(array.shape) == 2
+  Y, X = array.shape
+  # calc num patches in each direction from origin
+  y, x = origin
+  up, down = y//ps, (Y-y)//ps
+  left, right = x//ps, (X-x)//ps
+  patches = array[y-ps*up : y+ps*down, x-ps*left : x+ps*right]
+  # calc patch y,x dims for each pixel, relative to origin patch
+  indices = np.indices(patches.shape).transpose(1,2,0)
+  indices = indices // ps - np.array([up, left])
+  patches = patches.reshape(*patches.shape, 1)
+  patches = np.concatenate([patches, indices], axis=-1)
+  return patches
+
+# Remove completely black patches
+def get_tokens(patches):
+  Y,X = patches.shape[0:2]
+  y_patches, x_patches = Y // 32, X // 32
+  tokens = []
+  for i in range(y_patches):
+    for j in range(x_patches):
+      patch = patches[i*32 : (i+1)*32, j*32 : (j+1)*32]
+      if np.any(patch[:,:,0] > 0):
+        tokens.append(patch)
+  return np.array(tokens)
 
 if __name__=="__main__":
 
   model = AttentionUNet("AttentionUNet_4")
   model.load()
   gen = prepare_training_data("data/train", model)
-  minimap, origin = next(gen)
+  while True:
+    tokens = next(gen, -1)
+    if isinstance(tokens, int) and tokens == -1:
+      break
 
   done = 1
 

@@ -1,17 +1,17 @@
-import os, importlib, sys, math, copy
+import os, math, copy, random
 from pathlib import Path
 from collections import defaultdict
-from stream.client import draw_minimap, frames_to_map, get_moves
+from stream.client import draw_minimap, get_moves
 import numpy as np
 from PIL import Image
 from helpers import shrink_image, pad_to_square_multiple
 from models import AttentionUNet
-from typing import DefaultDict
+from typing import DefaultDict, List
 from scipy.ndimage import convolve
 
 class ViTDataLoader:
-  def __init__(self, data_dir, test_samples_per_class=1):
-    self.data_dir = data_dir
+  def __init__(self, data_dir, test_samples_per_class=1, batch_size=64):
+    self.data_dir, self.batch_size = data_dir, batch_size
 
     self.class_to_paths = defaultdict(set)
     for root, dirs, files in os.walk(self.data_dir):
@@ -23,6 +23,7 @@ class ViTDataLoader:
           self.class_to_paths[class_id].add(fp)
 
     self.train_test_split(test_samples_per_class)
+    self.shuffle_training_data()
 
   def train_test_split(self, test_samples_per_class):
     # todo: for validation, don't use minimaps that only capture layout origin, which are unlikely to be predictive
@@ -33,9 +34,23 @@ class ViTDataLoader:
         if self.train_data[layout]:
           self.test_data[layout].add(self.train_data[layout].pop())
 
-  def batch_train_data(self):
-    pass
-
+  def shuffle_training_data(self):
+    # we are being lazy and tracking filepaths, will load data into memory later
+    # the unit of data for training/inference is a set of patches of a minimap
+    # here, the patches are represented as a filepath string, later will load as np.ndarray
+    self.training_batches: List[List[str]] = list()
+    shuffled = {k: random.sample(list(v), len(v)) for k,v in self.train_data.items()}
+    num_data = sum(len(val) for val in self.train_data.values())
+    num_batches = math.ceil(num_data / self.batch_size)
+    quotas = {k: math.ceil(len(v) / num_batches) for k,v in shuffled.items()}
+    for _ in range(num_batches):
+      self.training_batches.append(list())
+      for layout in shuffled:
+        # for class balance in training batches
+        for __ in range(quotas[layout]):
+          if shuffled[layout]:
+            patches_fp = shuffled[layout].pop()
+            self.training_batches[-1].append(patches_fp)
 
 def find_unprocessed_frames(data_dir: str) -> DefaultDict[str, set]:
   not_done = defaultdict(set)

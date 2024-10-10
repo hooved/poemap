@@ -1,4 +1,4 @@
-import os, importlib, sys, math
+import os, importlib, sys, math, copy
 from pathlib import Path
 from collections import defaultdict
 from stream.client import draw_minimap, frames_to_map, get_moves
@@ -10,23 +10,32 @@ from typing import DefaultDict
 from scipy.ndimage import convolve
 
 class ViTDataLoader:
-  def __init__(self, data_dir):
+  def __init__(self, data_dir, test_samples_per_class=1):
     self.data_dir = data_dir
-    self._class_to_paths = None
 
-  @property
-  def class_to_paths(self):
-    if self._class_to_paths is None:
-      self._class_to_paths = defaultdict(set)
-      for root, dirs, files in os.walk(self.data_dir):
-        for file in files:
-          prefix, ext = os.path.splitext(file)
-          if ext == ".npz":
-            fp = os.path.join(root, file)
-            class_id = int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
-            self._class_to_paths[class_id].add(fp)
+    self.class_to_paths = defaultdict(set)
+    for root, dirs, files in os.walk(self.data_dir):
+      for file in files:
+        prefix, ext = os.path.splitext(file)
+        if ext == ".npz":
+          fp = os.path.join(root, file)
+          class_id = int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
+          self.class_to_paths[class_id].add(fp)
 
-    return self._class_to_paths
+    self.train_test_split(test_samples_per_class)
+
+  def train_test_split(self, test_samples_per_class):
+    # todo: for validation, don't use minimaps that only capture layout origin, which are unlikely to be predictive
+    self.train_data = copy.deepcopy(self.class_to_paths)
+    self.test_data = defaultdict(set)
+    for layout in self.class_to_paths:
+      for _ in range(test_samples_per_class):
+        if self.train_data[layout]:
+          self.test_data[layout].add(self.train_data[layout].pop())
+
+  def batch_train_data(self):
+    pass
+
 
 def find_unprocessed_frames(data_dir: str) -> DefaultDict[str, set]:
   not_done = defaultdict(set)

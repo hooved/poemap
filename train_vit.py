@@ -5,7 +5,8 @@ from training_data import ViTDataLoader
 
 if __name__=="__main__":
   dl = ViTDataLoader(data_dir="data/train")
-  ctp = dl.class_to_paths
+  train = dl.train_data
+  test = dl.test_data
 
   model = ViT(9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
   #tokens = np.load("data/train/1/0/0.npz")['data']

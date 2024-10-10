@@ -22,7 +22,7 @@ class ViT:
     self.encoder_norm = (Tensor.scaled_uniform(embed_dim), Tensor.zeros(embed_dim))
     self.head = (Tensor.scaled_uniform(embed_dim, num_classes), Tensor.zeros(num_classes))
 
-  def __call__(self, x: List[np.ndarray]):
+  def __call__(self, x: List[np.ndarray]) -> Tensor:
     # need to use np arrays because tinygrad throws errors on noncontiguous assignments during pos embed calcs
     class_tokens = self.cls_token.add(Tensor.zeros(len(x),1,1))
 

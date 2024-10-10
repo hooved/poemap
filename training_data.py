@@ -1,4 +1,5 @@
 import os, importlib, sys, math
+from pathlib import Path
 from collections import defaultdict
 from stream.client import draw_minimap, frames_to_map, get_moves
 import numpy as np
@@ -7,6 +8,25 @@ from helpers import shrink_image, pad_to_square_multiple
 from models import AttentionUNet
 from typing import DefaultDict
 from scipy.ndimage import convolve
+
+class ViTDataLoader:
+  def __init__(self, data_dir):
+    self.data_dir = data_dir
+    self._class_to_paths = None
+
+  @property
+  def class_to_paths(self):
+    if self._class_to_paths is None:
+      self._class_to_paths = defaultdict(set)
+      for root, dirs, files in os.walk(self.data_dir):
+        for file in files:
+          prefix, ext = os.path.splitext(file)
+          if ext == ".npz":
+            fp = os.path.join(root, file)
+            class_id = int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
+            self._class_to_paths[class_id].add(fp)
+
+    return self._class_to_paths
 
 def find_unprocessed_frames(data_dir: str) -> DefaultDict[str, set]:
   not_done = defaultdict(set)

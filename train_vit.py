@@ -1,30 +1,33 @@
 from models import ViT
 import numpy as np
 from tinygrad import Tensor, nn, dtypes, TinyJit
+from tinygrad.nn.state import safe_load, safe_save, get_state_dict, load_state_dict
 from training_data import ViTDataLoader
 
 if __name__=="__main__":
   dl = ViTDataLoader(data_dir="data/train")
 
   model = ViT(9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
+  model_name = "ViT1"
   #tokens = np.load("data/train/1/0/0.npz")['data']
   optim = nn.optim.Adam(nn.state.get_parameters(model))
 
-  def step():
+  def step(X, Y):
     Tensor.training = True
     optim.zero_grad()
-    tokens = np.load("data/train/1/0/0.npz")['data']
-    pred = model([tokens])
-    truth = Tensor([1])
-    loss = pred.cross_entropy(truth).backward()
+    #pred = model(X)
+    #pred = pred.argmax(axis=1).cast(dtypes.uint8).numpy()
+    loss = model(X).cross_entropy(Tensor(Y)).backward()
     optim.step()
-    pred = pred.argmax(axis=1).cast(dtypes.uint8).numpy()
-    print(pred)
     return loss
   jit_step = TinyJit(step)
 
-  for step_num in range(1):
-    loss = jit_step()
-    print(f"step: {step_num:4d}, loss: {loss.item():.2f}")
+  num_epochs = 200
+  for epoch in range(num_epochs):
+    for i, (X, Y) in enumerate(dl.get_training_data()):
+      loss = jit_step(X, Y)
+      print(f"epoch: {epoch:4d}, step: {i:4d}, loss: {loss.item():.2f}")
+
+  safe_save(get_state_dict(model), f"data/model/{model_name}.safetensors")
 
   done = 1

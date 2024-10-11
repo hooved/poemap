@@ -19,11 +19,14 @@ class ViTDataLoader:
         prefix, ext = os.path.splitext(file)
         if ext == ".npz":
           fp = os.path.join(root, file)
-          class_id = int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
+          class_id = self.fp_to_class(fp)
           self.class_to_paths[class_id].add(fp)
 
     self.train_test_split(test_samples_per_class)
     self.shuffle_training_data()
+
+  def fp_to_class(self, fp):
+    return int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
 
   def train_test_split(self, test_samples_per_class):
     # todo: for validation, don't use minimaps that only capture layout origin, which are unlikely to be predictive
@@ -51,6 +54,14 @@ class ViTDataLoader:
           if shuffled[layout]:
             patches_fp = shuffled[layout].pop()
             self.training_batches[-1].append(patches_fp)
+
+  def get_training_data(self):
+    for batch in self.training_batches:
+      X = [np.load(fp)['data'] for fp in batch]
+      # randomize patch order, it shouldn't matter because we calc position embeddings based on attached coords
+      [np.random.shuffle(patches) for patches in X]
+      Y = [self.fp_to_class(fp) for fp in batch]
+      yield X, Y
 
 def find_unprocessed_frames(data_dir: str) -> DefaultDict[str, set]:
   not_done = defaultdict(set)

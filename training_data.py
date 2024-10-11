@@ -68,7 +68,7 @@ def find_unprocessed_frames(data_dir: str) -> DefaultDict[str, set]:
   for root, dirs, files in os.walk(data_dir):
     for file in files:
       prefix, ext = os.path.splitext(file)
-      if ext == ".png" and f"{prefix}.npz" not in files:
+      if ext == ".png" and prefix[-1] != 'o' and f"{prefix}.npz" not in files:
         #not_done[root].add(os.path.join(root, file))
         not_done[root].add(file)
   return not_done
@@ -105,7 +105,10 @@ def prepare_training_data(data_dir, model):
 
 def crop_to_content(image):
   white_pixels = np.argwhere(image == 1)
-  assert len(white_pixels) > 0
+  #assert len(white_pixels) > 0
+  if len(white_pixels) == 0:
+    # TODO: handle empty images downstream
+    return image, (0, 0)
   y_min, x_min = white_pixels.min(axis=0)
   y_max, x_max = white_pixels.max(axis=0)
   cropped_image = image[y_min:y_max+1, x_min:x_max+1]

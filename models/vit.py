@@ -2,7 +2,7 @@
 # https://github.com/tinygrad/tinygrad/blob/master/extra/models/vit.py and transformer.py
 # https://github.com/kweimann/poe-learning-layouts/blob/main/model.py
 
-from tinygrad import Tensor
+from tinygrad import Tensor, dtypes
 from tinygrad.nn import Conv2d, Linear
 import numpy as np
 from typing import List
@@ -103,3 +103,16 @@ class TransformerBlock:
       x = x + self.act(x.linear(*self.ff1)).linear(*self.ff2).dropout(self.dropout)
       x = x.layernorm().linear(*self.ln2)
     return x
+
+if __name__=="__main__":
+  from tinygrad.nn.state import safe_load, load_state_dict
+  model = ViT(9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
+  model_name = "ViT1"
+  state_dict = safe_load(f"data/model/{model_name}.safetensors")
+  load_state_dict(model, state_dict)
+
+  x = np.load("data/train/3/2/1.npz")['data']
+  pred = model([x])
+  print(pred.numpy())
+  pred = pred.argmax(axis=1).cast(dtypes.uint8).numpy()
+  print(pred)

@@ -113,6 +113,31 @@ def draw_minimap(video, movement):
   origin = (y_start + H_frame // 2, x_start + W_frame // 2)
   return minimap, origin
 
+def minimap_append_frame(minimap, diff_frames, origin, last_position):
+  assert len(diff_frames) == 2
+  _, H_frame, W_frame, C = diff_frames.shape  # frame size
+  assert H_frame % 2 == 0 and W_frame % 2 == 0
+  old_H, old_W, _ = minimap.shape
+
+  move = np.round(find_translation(diff_frames[0], diff_frames[1])).astype(int)
+  current_position = (last_position[0] + move[0], last_position[1] + move[1])
+
+  pad_up = abs(min(current_position[0] - H_frame//2, 0))
+  pad_down = abs(min(old_H - current_position[0] - H_frame//2, 0))
+  pad_left = abs(min(current_position[1] - W_frame//2, 0))
+  pad_right = abs(min(old_W - current_position[1] - W_frame//2, 0))
+  if not any((pad_up, pad_down, pad_left, pad_right)):
+    return minimap, origin, current_position
+
+  minimap = np.pad(minimap, ((pad_up, pad_down), (pad_left, pad_right), (0,0)), mode='constant')
+  origin = (origin[0] + pad_up, origin[1] + pad_left)
+  current_position = (current_position[0] + pad_up, current_position[1] + pad_left)
+  frame_top = current_position[0] - H_frame//2
+  frame_left = current_position[1] - W_frame//2
+  assert frame_top >= 0 and frame_left >=0
+  minimap[frame_top : frame_top+H_frame, frame_left : frame_left+W_frame] = diff_frames[1]
+  return minimap, origin, last_position
+
 def trigger_start_stream():
   global stop_stream
   stop_stream = False

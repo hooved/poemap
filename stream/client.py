@@ -119,8 +119,10 @@ def minimap_append_frame(minimap, diff_frames, origin, last_position):
   assert H_frame % 2 == 0 and W_frame % 2 == 0
   old_H, old_W, _ = minimap.shape
 
+  # dx, dy
   move = np.round(find_translation(diff_frames[0], diff_frames[1])).astype(int)
-  current_position = (last_position[0] + move[0], last_position[1] + move[1])
+  # y, x
+  current_position = (last_position[0] + move[1], last_position[1] + move[0])
 
   pad_up = abs(min(current_position[0] - H_frame//2, 0))
   pad_down = abs(min(old_H - current_position[0] - H_frame//2, 0))
@@ -136,7 +138,7 @@ def minimap_append_frame(minimap, diff_frames, origin, last_position):
   frame_left = current_position[1] - W_frame//2
   assert frame_top >= 0 and frame_left >=0
   minimap[frame_top : frame_top+H_frame, frame_left : frame_left+W_frame] = diff_frames[1]
-  return minimap, origin, last_position
+  return minimap, origin, current_position
 
 def trigger_start_stream():
   global stop_stream

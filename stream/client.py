@@ -11,6 +11,11 @@ class AsyncState:
     self.data = None
     self.lock = asyncio.Lock()
     self.data_ready = asyncio.Event()
+    self.stop_stream = True
+    self.stop_program = False
+    keyboard.add_hotkey("ctrl+alt+q", self.trigger_start_stream)
+    keyboard.add_hotkey("ctrl+alt+w", self.trigger_stop_stream)
+    keyboard.add_hotkey("ctrl+alt+e", self.trigger_stop_program)
 
   async def write(self, data):
     async with self.lock:
@@ -23,6 +28,15 @@ class AsyncState:
       self.data_ready.clear()
       return self.data
 
+  def trigger_start_stream(self):
+    self.stop_stream = False
+
+  def trigger_stop_stream(self):
+    self.stop_stream = True
+
+  def trigger_stop_program(self):
+    self.stop_program = True
+
 def capture_screen(box_radius):
   # player icon is at 1920, 1060, in 4k
   region = (1920 - box_radius, 1060 - box_radius, box_radius*2, box_radius*2)
@@ -30,7 +44,6 @@ def capture_screen(box_radius):
   return np.array(screenshot)
 
 async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
-  global stop_stream, stop_program
   frame_time = 1 / target_fps
   minimap = capture_screen(box_radius)
   frames = [minimap]
@@ -45,7 +58,7 @@ async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
     frames.pop(0)
     await state.write(minimap)
 
-    if stop_stream or stop_program:
+    if state.stop_stream or state.stop_program:
       print("Stopping stream...")
       return
 
@@ -54,16 +67,14 @@ async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
       await asyncio.sleep(frame_time - elapsed)
 
 async def consume_minimap(state: AsyncState):
-  global stop_stream, stop_program
   while True:
     minimap = await state.read()
-    #minimap = Image.fromarray(minimap)
     cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
     #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
     cv2.imshow('Overlay', minimap)
     cv2.waitKey(1)
-    if stop_stream or stop_program:
+    if state.stop_stream or state.stop_program:
       cv2.destroyAllWindows()
       return
     await asyncio.sleep(3)
@@ -126,37 +137,16 @@ def minimap_append_frame(minimap, diff_frames, origin, last_position):
   minimap[frame_top : frame_top+H_frame, frame_left : frame_left+W_frame] = diff_frames[1]
   return minimap, origin, current_position
 
-stop_stream = True
-stop_program = False
-
-def trigger_start_stream():
-  global stop_stream
-  stop_stream = False
-
-def trigger_stop_stream():
-  global stop_stream
-  stop_stream = True
-
-def trigger_stop_program():
-  global stop_program
-  stop_program = True
-
-
 async def main():
-  # using global vars because keyboard doesn't allow triggering one hotkey's callback during another
-  keyboard.add_hotkey("ctrl+alt+q", trigger_start_stream)
-  keyboard.add_hotkey("ctrl+alt+w", trigger_stop_stream)
-  keyboard.add_hotkey("ctrl+alt+e", trigger_stop_program)
   state = AsyncState()
 
   while True:
-    if not stop_stream:
+    if not state.stop_stream:
       async with asyncio.TaskGroup() as tg:
         producer = tg.create_task(produce_minimap(state, target_fps=1))
         consumer = tg.create_task(consume_minimap(state))
-      #stream_frames(target_fps=1)
 
-    if stop_program:
+    if state.stop_program:
       sys.exit()
 
     time.sleep(0.5)

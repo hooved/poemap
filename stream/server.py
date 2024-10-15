@@ -1,4 +1,4 @@
-from comms import receive_array, send_array
+from comms import receive_int, receive_array, send_array, ClientHeader
 import numpy as np
 from PIL import Image
 import asyncio
@@ -6,23 +6,22 @@ import asyncio
 async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
   print("connection opened")
   while True:
-    minimap = await receive_array(reader)
+    header = await receive_int(reader)
+    header = ClientHeader(header)
 
-    if minimap.shape == (42,):
+    if header == ClientHeader.PROCESS_MINIMAP:
+      minimap = await receive_array(reader)
+      print(f"received minimap, shape = {minimap.shape}")
+      Image.fromarray(minimap).save("minimap.png")
+      response = 7
+      writer.write(response.to_bytes(4, byteorder="big"))
+      await writer.drain()
+
+    elif header == ClientHeader.CLOSE_CONNECTION:
       print("closing connection")
       writer.close()
       await writer.wait_closed()
       break
-
-    print(f"received minimap, shape = {minimap.shape}")
-    print(minimap)
-    #minimap = Image.fromarray(minimap)
-    #minimap.save("minimap.png")
-
-    response = np.array([1,2,3], dtype=np.uint8)
-    await send_array(writer, response)
-    #writer.close()
-    #await writer.wait_closed()
 
 async def run_server(hostname, port: int):
   print(f"starting server at {hostname}:{port}")

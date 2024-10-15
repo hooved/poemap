@@ -1,5 +1,10 @@
 import numpy as np
 import functools, operator, asyncio
+from enum import IntEnum
+
+class ClientHeader(IntEnum):
+  PROCESS_MINIMAP = 1
+  CLOSE_CONNECTION = 2
 
 async def receive_exact(reader: asyncio.StreamReader, n: int) -> bytes:
   data = b''

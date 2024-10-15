@@ -1,7 +1,7 @@
 import pyautogui
 import keyboard
-import time, os, sys, socket, asyncio
-from comms import send_array, receive_array
+import time, os, sys, asyncio
+from comms import receive_int, send_array, receive_array, ClientHeader
 import numpy as np
 import cv2
 from PIL import Image
@@ -67,6 +67,7 @@ async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
       await asyncio.sleep(frame_time - elapsed)
 
 async def consume_minimap(state: AsyncState):
+  reader, writer = await asyncio.open_connection('localhost', 50000)
   while True:
     minimap = await state.read()
     cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
@@ -74,10 +75,21 @@ async def consume_minimap(state: AsyncState):
     #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
     cv2.imshow('Overlay', minimap)
     cv2.waitKey(1)
+    await send_header(writer, ClientHeader.PROCESS_MINIMAP)
+    await send_array(writer, minimap)
+    layout_id = await receive_int(reader)
+    print(f"layout_id = {layout_id}")
+
     if state.stop_stream or state.stop_program:
       cv2.destroyAllWindows()
+      await send_header(writer, ClientHeader.CLOSE_CONNECTION)
+      writer.close()
+      await writer.wait_closed()
       return
-    await asyncio.sleep(3)
+
+async def send_header(writer: asyncio.StreamWriter, header: ClientHeader):
+  writer.write(header.to_bytes(4, byteorder="big"))
+  await writer.drain()
 
 # From https://github.com/kweimann/poe-learning-layouts/blob/main/utils/data.py, MIT License
 def find_translation(image_a, image_b, threshold=0.7, max_matches=15):
@@ -149,25 +161,7 @@ async def main():
     if state.stop_program:
       sys.exit()
 
-    time.sleep(0.5)
-
-async def test():
-  reader, writer = await asyncio.open_connection('localhost', 50000)
-  for _ in range(3):
-    t1 = time.perf_counter()
-    array = np.array([42], dtype=np.uint8)
-    await send_array(writer, array)
-    response = await receive_array(reader)
-    print(f"received response, shape = {response.shape}")
-    print(response)
-    print(f"elapsed: {time.perf_counter() - t1:.6f}")
-
-  # signal to server to close connection
-  array = np.ones((42,), dtype=np.uint8)
-  await send_array(writer, array)
-  writer.close()
-  await writer.wait_closed()
+    await asyncio.sleep(0.5)
 
 if __name__=="__main__":
-  asyncio.run(test())
-  #asyncio.run(main())
+  asyncio.run(main())

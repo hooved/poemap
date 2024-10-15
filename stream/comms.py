@@ -1,30 +1,31 @@
 import numpy as np
-import functools, operator
+import functools, operator, asyncio
 
-def receive_exact(sock, n):
+async def receive_exact(reader: asyncio.StreamReader, n: int) -> bytes:
   data = b''
   while len(data) < n:
-    packet = sock.recv(n - len(data))
+    packet = await reader.read(n - len(data))
     if not packet:
       return None
     data += packet
   return data
 
-def send_array(sock, array: np.ndarray):
+async def send_array(writer: asyncio.StreamWriter, array: np.ndarray):
   # send number of dims, then size of each dim, then the array data
-  sock.send(len(array.shape).to_bytes(4, byteorder="big"))
+  writer.write(len(array.shape).to_bytes(4, byteorder="big"))
   for dim in array.shape:
-    sock.send(dim.to_bytes(4, byteorder="big"))
-  sock.sendall(array.tobytes())
+    writer.write(dim.to_bytes(4, byteorder="big"))
+  writer.write(array.tobytes())
+  await writer.drain()  # Ensure data is sent
 
-def receive_array(sock):
-  ndims = int.from_bytes(receive_exact(sock, 4), byteorder="big")
+async def receive_array(reader: asyncio.StreamReader) -> np.ndarray:
+  ndims = int.from_bytes(receive_exact(reader, 4), byteorder="big")
   shape = []
   for _ in range(ndims):
-    dim_size = int.from_bytes(receive_exact(sock, 4), byteorder="big")
+    dim_size = int.from_bytes(receive_exact(reader, 4), byteorder="big")
     shape.append(dim_size)
   assert len(shape) > 0
   array_size = functools.reduce(operator.mul, shape)
-  array = receive_exact(sock, array_size)
+  array = receive_exact(reader, array_size)
   array = np.frombuffer(array, dtype=np.uint8).reshape(shape)
   return array

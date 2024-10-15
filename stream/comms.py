@@ -19,13 +19,15 @@ async def send_array(writer: asyncio.StreamWriter, array: np.ndarray):
   await writer.drain()  # Ensure data is sent
 
 async def receive_array(reader: asyncio.StreamReader) -> np.ndarray:
-  ndims = int.from_bytes(receive_exact(reader, 4), byteorder="big")
+  ndims = await receive_exact(reader, 4)
+  ndims = int.from_bytes(ndims, byteorder="big")
   shape = []
   for _ in range(ndims):
-    dim_size = int.from_bytes(receive_exact(reader, 4), byteorder="big")
+    dim_size = await receive_exact(reader, 4)
+    dim_size = int.from_bytes(dim_size, byteorder="big")
     shape.append(dim_size)
   assert len(shape) > 0
   array_size = functools.reduce(operator.mul, shape)
-  array = receive_exact(reader, array_size)
+  array = await receive_exact(reader, array_size)
   array = np.frombuffer(array, dtype=np.uint8).reshape(shape)
   return array

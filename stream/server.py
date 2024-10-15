@@ -1,24 +1,34 @@
-import socket
-from comms import receive_array
+from comms import receive_array, send_array
 import numpy as np
 from PIL import Image
+import asyncio
 
-def start_server():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    port = 50000
-    server.bind(('localhost', port))
-    server.listen(1)
-    
-    print(f"Server listening on localhost:{port}")
-    
-    while True:
-        client, addr = server.accept()
-        print(f"Connection from {addr}")
-        
-        array = receive_array(client)
-        print(f"Received: {type(array)}")
-        Image.fromarray(array).save("minimap.png")
-        
-        client.close()
+async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+  print("connection opened")
+  while True:
+    minimap = await receive_array(reader)
 
-start_server()
+    if minimap.shape == (42,):
+      print("closing connection")
+      writer.close()
+      await writer.wait_closed()
+      break
+
+    print(f"received minimap, shape = {minimap.shape}")
+    print(minimap)
+    #minimap = Image.fromarray(minimap)
+    #minimap.save("minimap.png")
+
+    response = np.array([1,2,3], dtype=np.uint8)
+    await send_array(writer, response)
+    #writer.close()
+    #await writer.wait_closed()
+
+async def run_server(hostname, port: int):
+  print(f"starting server at {hostname}:{port}")
+  server = await asyncio.start_server(minimap_to_layout, hostname, port)
+  async with server:
+    await server.serve_forever()
+
+if __name__=="__main__":
+   asyncio.run(run_server('localhost', 50000))

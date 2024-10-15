@@ -1,7 +1,7 @@
 import pyautogui
 import keyboard
 import time, os, sys, socket, asyncio
-from comms import send_array
+from comms import send_array, receive_array
 import numpy as np
 import cv2
 from PIL import Image
@@ -151,12 +151,23 @@ async def main():
 
     time.sleep(0.5)
 
-if __name__=="__main__":
-  #client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-  #client.connect(('localhost', 50000))
-  #array = np.array(Image.open("minimap.png"))
-  #send_array(client, array)
-  #client.close()
-  #sys.exit()
+async def test():
+  reader, writer = await asyncio.open_connection('localhost', 50000)
+  for _ in range(3):
+    t1 = time.perf_counter()
+    array = np.array([42], dtype=np.uint8)
+    await send_array(writer, array)
+    response = await receive_array(reader)
+    print(f"received response, shape = {response.shape}")
+    print(response)
+    print(f"elapsed: {time.perf_counter() - t1:.6f}")
 
-  asyncio.run(main())
+  # signal to server to close connection
+  array = np.ones((42,), dtype=np.uint8)
+  await send_array(writer, array)
+  writer.close()
+  await writer.wait_closed()
+
+if __name__=="__main__":
+  asyncio.run(test())
+  #asyncio.run(main())

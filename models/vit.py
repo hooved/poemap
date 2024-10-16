@@ -4,12 +4,14 @@
 
 from tinygrad import Tensor, dtypes
 from tinygrad.nn import Conv2d, Linear
+from tinygrad.nn.state import safe_load, load_state_dict
 import numpy as np
 from typing import List
 
 # adapted from tinygrad ViT code
 class ViT:
-  def __init__(self, num_classes, max_tokens=128, layers=3, embed_dim=256, num_heads=4):
+  def __init__(self, model_name, num_classes, max_tokens=128, layers=3, embed_dim=256, num_heads=4):
+    self.model_name = model_name
     self.embed_dim = embed_dim
     self.max_tokens = max_tokens
     self.embedding = PatchEmbed()
@@ -39,6 +41,11 @@ class ViT:
     x = class_tokens.cat(x, dim=1).sequential(self.tbs)
     x = x.layernorm().linear(*self.encoder_norm)
     return x[:, 0].linear(*self.head)
+
+  def load(self):
+    state_dict = safe_load(f"data/model/{self.model_name}.safetensors")
+    load_state_dict(self, state_dict)
+    return self
 
 class PatchEmbed:
   def __init__(self):

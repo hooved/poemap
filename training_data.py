@@ -1,7 +1,7 @@
 import os, math, copy, random
 from pathlib import Path
 from collections import defaultdict
-from stream.client import draw_minimap, get_moves
+#from stream.client import draw_minimap, get_moves
 import numpy as np
 from PIL import Image
 from helpers import shrink_image, pad_to_square_multiple

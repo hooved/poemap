@@ -56,7 +56,7 @@ async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
     frames.append(frame)
     minimap, origin, last_position = minimap_append_frame(minimap, np.array(frames), origin, last_position)
     frames.pop(0)
-    await state.write(minimap)
+    await state.write((minimap, origin))
 
     if state.stop_stream or state.stop_program:
       print("Stopping stream...")
@@ -69,7 +69,8 @@ async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
 async def consume_minimap(state: AsyncState):
   reader, writer = await asyncio.open_connection('localhost', 50000)
   while True:
-    minimap = await state.read()
+    minimap, origin = await state.read()
+    # TODO: shrink minimap before sending to server, instead of after
     cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
     #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
@@ -77,6 +78,7 @@ async def consume_minimap(state: AsyncState):
     cv2.waitKey(1)
     await send_header(writer, ClientHeader.PROCESS_MINIMAP)
     await send_array(writer, minimap)
+    await send_array(writer, np.array(origin, dtype=np.uint32))
     layout_id = await receive_int(reader)
     print(f"layout_id = {layout_id}")
 

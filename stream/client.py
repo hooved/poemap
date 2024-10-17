@@ -2,6 +2,7 @@ import pyautogui
 import keyboard
 import time, os, sys, asyncio
 from comms import receive_int, send_array, receive_array, ClientHeader
+from helpers import shrink_with_origin
 import numpy as np
 import cv2
 from PIL import Image
@@ -56,7 +57,7 @@ async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
     frames.append(frame)
     minimap, origin, last_position = minimap_append_frame(minimap, np.array(frames), origin, last_position)
     frames.pop(0)
-    await state.write((minimap, origin))
+    await state.write(shrink_with_origin(minimap, origin))
 
     if state.stop_stream or state.stop_program:
       print("Stopping stream...")
@@ -70,7 +71,6 @@ async def consume_minimap(state: AsyncState):
   reader, writer = await asyncio.open_connection('localhost', 50000)
   while True:
     minimap, origin = await state.read()
-    # TODO: shrink minimap before sending to server, instead of after
     cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
     #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)

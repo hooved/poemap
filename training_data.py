@@ -4,7 +4,7 @@ from collections import defaultdict
 #from stream.client import draw_minimap, get_moves
 import numpy as np
 from PIL import Image
-from helpers import shrink_image, pad_to_square_multiple
+from helpers import shrink_with_origin, pad_to_square_multiple
 from models import AttentionUNet
 from typing import DefaultDict, List
 from scipy.ndimage import convolve
@@ -96,6 +96,7 @@ def prepare_training_data(data_dir, model):
       tf_idx = next((i for i, tpl in enumerate(frames) if tpl[0]==tf_id), -1)
       frames_subset = np.array([f for fid, f in frames][0:tf_idx + 1])
       minimap, origin = draw_minimap(frames_subset, moves[0:tf_idx + 1])
+      minimap, origin = shrink_with_origin(minimap, origin)
       minimap, origin = extract_map_features(minimap, origin, model)
       o_id = get_frame_id(target_frame)
       Image.fromarray(minimap * 255, mode="L").save(os.path.join(instance, f"{o_id}o.png"))
@@ -137,13 +138,7 @@ def pad_with_origin(minimap, origin, pad_multiple):
   minimap = minimap[:,:,0:-1].astype(np.uint8)
   return minimap, origin
 
-def extract_map_features(image, origin, model):
-  # shrink image, recalculate origin
-  dims = image.shape[0:2]
-  max_dim_idx = dims.index(max(dims))
-  new_size = dims[max_dim_idx] // 2
-  origin = tuple(int(x * new_size / max(dims)) for x in origin)
-  minimap = shrink_image(image, new_size)
+def extract_map_features(minimap, origin, model):
   minimap, origin = pad_with_origin(minimap, origin, 32)
   pred = model.batch_inference(minimap, chunk_size=32)
   pred = clean_sparse_pixels(pred, threshold=20, neighborhood_size=40)

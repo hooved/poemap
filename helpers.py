@@ -17,7 +17,7 @@ def shrink_image(img: np.ndarray, target_size: int):
   resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
   return resized
 
-def shrink_with_origin(image: np.ndarray, origin: tuple)
+def shrink_with_origin(image: np.ndarray, origin: tuple):
   dims = image.shape[0:2]
   max_dim_idx = dims.index(max(dims))
   new_size = dims[max_dim_idx] // 2

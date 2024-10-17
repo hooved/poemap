@@ -1,7 +1,7 @@
 from comms import receive_int, receive_array, send_array, ClientHeader
 import numpy as np
 from PIL import Image
-import asyncio
+import asyncio, os
 from models import AttentionUNet, ViT
 from tinygrad.nn.state import safe_load, load_state_dict
 from tinygrad import dtypes, Tensor, TinyJit
@@ -10,6 +10,7 @@ from functools import partial
 
 async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, models: dict):
   print("connection opened")
+  timestamp = 0
   while True:
     header = await receive_int(reader)
     header = ClientHeader(header)
@@ -18,8 +19,13 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
       minimap = await receive_array(reader, dtype=np.uint8)
       origin = await receive_array(reader, dtype=np.uint32)
       origin = tuple(int(x) for x in origin)
-      minimap, origin = extract_map_features(minimap, origin, models["UNet"])
-      tokens = [get_tokens(get_patches(minimap, origin))]
+      mask, origin = extract_map_features(minimap, origin, models["UNet"])
+      tokens = [get_tokens(get_patches(mask, origin))]
+      if os.getenv("COLLECT"):
+        os.makedirs("data/train/collect", exist_ok=True)
+        Image.fromarray(minimap).save(f"data/train/collect/{timestamp}.png")
+        np.savez_compressed(f"data/train/collect/{timestamp}.npz")
+      timestamp += 1
       layout_id = models["ViT"](tokens)[0].argmax().cast(dtypes.uint8).item()
       writer.write(layout_id.to_bytes(4, byteorder="big"))
       await writer.drain()
@@ -47,4 +53,4 @@ async def run_server(hostname, port: int):
     await server.serve_forever()
 
 if __name__=="__main__":
-   asyncio.run(run_server('localhost', 50000))
+  asyncio.run(run_server('localhost', 50000))

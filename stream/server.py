@@ -24,6 +24,7 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
       if os.getenv("COLLECT"):
         os.makedirs("data/train/collect", exist_ok=True)
         Image.fromarray(minimap).save(f"data/train/collect/{timestamp}.png")
+        Image.fromarray(mask * 255, mode="L").save(f"data/train/collect/{timestamp}_mask.png")
         np.savez_compressed(f"data/train/collect/{timestamp}.npz", data=tokens)
       timestamp += 1
       layout_id = models["ViT"](tokens)[0].argmax().cast(dtypes.uint8).item()

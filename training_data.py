@@ -115,7 +115,7 @@ def crop_to_content(image):
   cropped_image = image[y_min:y_max+1, x_min:x_max+1]
   return cropped_image, (y_min, x_min)
 
-def clean_sparse_pixels(image, threshold=3, neighborhood_size=3):
+def clean_sparse_pixels(image, threshold=3, neighborhood_size=8):
   # Create a kernel for counting neighbors
   kernel = np.ones((neighborhood_size, neighborhood_size))
   kernel[neighborhood_size//2, neighborhood_size//2] = 0  # Don't count the pixel itself

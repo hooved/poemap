@@ -44,7 +44,7 @@ def capture_screen(box_radius):
   screenshot = pyautogui.screenshot(region=region)
   return np.array(screenshot)
 
-async def produce_minimap(state: AsyncState, target_fps=2, box_radius=600):
+async def produce_minimap(state: AsyncState, target_fps=0.5, box_radius=600):
   frame_time = 1 / target_fps
   minimap = capture_screen(box_radius)
   frames = [minimap]
@@ -139,9 +139,8 @@ def minimap_append_frame(minimap, diff_frames, origin, last_position):
   pad_down = abs(min(old_H - current_position[0] - H_frame//2, 0))
   pad_left = abs(min(current_position[1] - W_frame//2, 0))
   pad_right = abs(min(old_W - current_position[1] - W_frame//2, 0))
-  if not any((pad_up, pad_down, pad_left, pad_right)):
-    return minimap, origin, current_position
-
+  #if not any((pad_up, pad_down, pad_left, pad_right)):
+    #return minimap, origin, current_position
   minimap = np.pad(minimap, ((pad_up, pad_down), (pad_left, pad_right), (0,0)), mode='constant')
   origin = (origin[0] + pad_up, origin[1] + pad_left)
   current_position = (current_position[0] + pad_up, current_position[1] + pad_left)
@@ -159,11 +158,12 @@ async def main():
       async with asyncio.TaskGroup() as tg:
         producer = tg.create_task(produce_minimap(state, target_fps=1))
         consumer = tg.create_task(consume_minimap(state))
+        state = AsyncState()
 
     if state.stop_program:
       sys.exit()
 
-    await asyncio.sleep(0.5)
+    await asyncio.sleep(0.1)
 
 if __name__=="__main__":
   asyncio.run(main())

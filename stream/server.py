@@ -17,15 +17,17 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
 
     if header == ClientHeader.PROCESS_MINIMAP:
       minimap = await receive_array(reader, dtype=np.uint8)
-      origin = await receive_array(reader, dtype=np.uint32)
-      origin = tuple(int(x) for x in origin)
+      original_origin = await receive_array(reader, dtype=np.uint32)
+      origin = tuple(int(x) for x in original_origin)
       mask, origin = extract_map_features(minimap, origin, models["UNet"])
       tokens = [get_tokens(get_patches(mask, origin))]
       if os.getenv("COLLECT"):
-        os.makedirs("data/train/collect", exist_ok=True)
-        Image.fromarray(minimap).save(f"data/train/collect/{timestamp}.png")
-        Image.fromarray(mask * 255, mode="L").save(f"data/train/collect/{timestamp}_mask.png")
-        np.savez_compressed(f"data/train/collect/{timestamp}.npz", data=tokens)
+        save_dir = os.path.join("data", "train", "collect")
+        os.makedirs(save_dir, exist_ok=True)
+        Image.fromarray(minimap).save(os.path.join(save_dir, f"{timestamp}.png"))
+        np.savez_compressed(os.path.join(save_dir, f"{timestamp}_origin.npz"), data=original_origin)
+        Image.fromarray(mask * 255, mode="L").save(os.path.join(save_dir, f"{timestamp}_mask.png"))
+        np.savez_compressed(os.path.join(save_dir, f"{timestamp}.npz"), data=tokens)
       timestamp += 1
       layout_id = models["ViT"](tokens)[0].argmax().cast(dtypes.uint8).item()
       writer.write(layout_id.to_bytes(4, byteorder="big"))

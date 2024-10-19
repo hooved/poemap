@@ -8,7 +8,7 @@ if __name__=="__main__":
   dl = ViTDataLoader(data_dir="data/train")
 
   model = ViT(9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
-  model_name = "ViT1"
+  model_name = "ViT2"
   #tokens = np.load("data/train/1/0/0.npz")['data']
   optim = nn.optim.Adam(nn.state.get_parameters(model))
 
@@ -24,7 +24,7 @@ if __name__=="__main__":
 
   num_epochs = 200
   for epoch in range(num_epochs):
-    for i, (X, Y) in enumerate(dl.get_training_data()):
+    for i, (X, Y) in enumerate(dl.get_training_data(model.max_tokens)):
       loss = jit_step(X, Y)
       print(f"epoch: {epoch:4d}, step: {i:4d}, loss: {loss.item():.2f}")
 

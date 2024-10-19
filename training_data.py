@@ -55,11 +55,15 @@ class ViTDataLoader:
             patches_fp = shuffled[layout].pop()
             self.training_batches[-1].append(patches_fp)
 
-  def get_training_data(self):
+  def get_training_data(self, max_patches):
     for batch in self.training_batches:
       X = [np.load(fp)['data'] for fp in batch]
       # randomize patch order, it shouldn't matter because we calc position embeddings based on attached coords
-      [np.random.shuffle(patches) for patches in X]
+      for i, patches in X:
+        if patches.shape[0] > max_patches:
+          X[i] = patches[np.random.choice(patches.shape[0], size=max_patches, replace=False)]
+        else:
+          np.random.shuffle(patches)
       Y = [self.fp_to_class(fp) for fp in batch]
       yield X, Y
 

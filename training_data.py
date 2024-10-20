@@ -1,4 +1,4 @@
-import os, math, copy, random
+import os, math, copy, random, glob
 from pathlib import Path
 from collections import defaultdict
 #from stream.client import draw_minimap, get_moves
@@ -14,13 +14,11 @@ class ViTDataLoader:
     self.data_dir, self.batch_size = data_dir, batch_size
 
     self.class_to_paths = defaultdict(set)
-    for root, dirs, files in os.walk(self.data_dir):
-      for file in files:
-        prefix, ext = os.path.splitext(file)
-        if ext == ".npz":
-          fp = os.path.join(root, file)
-          class_id = self.fp_to_class(fp)
-          self.class_to_paths[class_id].add(fp)
+    patches = set(glob.glob(os.path.join(data_dir, "*", "*", "*.npz")))
+    origins = set(glob.glob(os.path.join(data_dir, "*", "*", "*_origin.npz")))
+    patches = patches - origins
+    for fp in patches:
+      self.class_to_paths[self.fp_to_class(fp)].add(fp)
 
     self.train_test_split(test_samples_per_class)
     self.shuffle_training_data()
@@ -57,9 +55,9 @@ class ViTDataLoader:
 
   def get_training_data(self, max_patches):
     for batch in self.training_batches:
-      X = [np.load(fp)['data'] for fp in batch]
+      X = [np.load(fp)['data'][0] for fp in batch]
       # randomize patch order, it shouldn't matter because we calc position embeddings based on attached coords
-      for i, patches in X:
+      for i, patches in enumerate(X):
         if patches.shape[0] > max_patches:
           X[i] = patches[np.random.choice(patches.shape[0], size=max_patches, replace=False)]
         else:

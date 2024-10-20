@@ -7,8 +7,8 @@ from training_data import ViTDataLoader
 if __name__=="__main__":
   dl = ViTDataLoader(data_dir="data/train")
 
-  model = ViT(9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
   model_name = "ViT2"
+  model = ViT(model_name, 9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
   #tokens = np.load("data/train/1/0/0.npz")['data']
   optim = nn.optim.Adam(nn.state.get_parameters(model))
 

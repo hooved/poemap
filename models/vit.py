@@ -35,8 +35,11 @@ class ViT:
       # Throw out last two elements of last axis, which contained x,y-coord data
       layout = Tensor(layout[:,:,:,0], requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
       layout = self.embedding(layout).add(pe)
-      mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))
-      x[i] = layout.cat(mask_tokens, dim=0)
+      if layout.shape[0] < self.max_tokens:
+        mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))
+        x[i] = layout.cat(mask_tokens, dim=0)
+      else:
+        x[i] = layout
     x = Tensor.stack(*x)
     x = class_tokens.cat(x, dim=1).sequential(self.tbs)
     x = x.layernorm().linear(*self.encoder_norm)

@@ -79,7 +79,11 @@ async def consume_minimap(state: AsyncState):
     await send_header(writer, ClientHeader.PROCESS_MINIMAP)
     await send_array(writer, minimap)
     await send_array(writer, np.array(origin, dtype=np.uint32))
-    layout_id = await receive_int(reader)
+    try:
+      layout_id = await receive_int(reader)
+    except:
+      Image.fromarray(minimap).save("failed_minimap.png")
+      assert False
     print(f"layout_id = {layout_id}")
 
     if state.stop_stream or state.stop_program:

@@ -4,7 +4,6 @@ from tinygrad.dtype import dtypes
 from tinygrad.nn.state import safe_load, safe_save, get_state_dict, load_state_dict
 import numpy as np
 from dataloader import DataLoader
-from typing import Tuple, Optional, Union
 
 """
 Adapted from:
@@ -17,28 +16,6 @@ https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py
 def doubleconv(in_chan, out_chan):
   return [Conv2d(in_chan, out_chan, kernel_size=3, padding=1), BatchNorm2d(out_chan), Tensor.relu,
     Conv2d(out_chan, out_chan, kernel_size=3, padding=1), BatchNorm2d(out_chan), Tensor.relu]
-
-def multiclass_dice_loss(preds, targets, smooth=1e-6):
-    """
-    Args:
-        preds (Tensor): Predicted logits with shape [batch, num_classes, H, W].
-        targets (Tensor): Ground truth labels with shape [batch, H, W].
-    Returns:
-        Tensor: Dice Loss.
-    """
-    num_classes = preds.shape[1]
-    preds = preds.softmax(axis=1)
-    targets_one_hot = targets.one_hot(num_classes=num_classes)  # Shape: [batch, H, W, num_classes]
-    targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()  # Shape: [batch, num_classes, H, W]
-    preds_flat = preds.view(preds.shape[0], preds.shape[1], -1)
-    targets_flat = targets_one_hot.view(targets_one_hot.shape[0], targets_one_hot.shape[1], -1)
-
-    intersection = (preds_flat * targets_flat).sum(axis=2)
-    numerator = 2.0 * intersection + smooth
-    denominator = preds_flat.sum(axis=2) + targets_flat.sum(axis=2) + smooth
-    dice_score = numerator / denominator
-    dice_loss = 1 - dice_score.mean()
-    return dice_loss
 
 class UNet:
   def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
@@ -86,40 +63,6 @@ class UNet:
     state_dict = safe_load(f"data/model/{self.model_name}.safetensors")
     load_state_dict(self, state_dict)
     return self
-
-  def train(self, patch_size: Optional[Tuple[int]]=(64,64), batch_size: Optional[int]=128,
-            steps: Optional[int]=500):
-    self.dl.patch_size = patch_size
-    optim = nn.optim.Adam(nn.state.get_parameters(self))
-    def step():
-      Tensor.training = True 
-      X, Y = self.dl.get_batch(batch_size)
-      optim.zero_grad()
-      pred = self.__call__(X)
-      s = pred.shape
-
-      # uncomment this block to incorporate dice loss
-      loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
-      weight = 1
-      combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
-      optim.step()
-      return combined_loss
-
-      # Need to flatten for cross_entropy to work
-      loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)).backward()
-      optim.step()
-      return loss
-    jit_step = TinyJit(step)
-
-    for step in range(steps):
-      loss = jit_step()
-      if step%5 == 0:
-        Tensor.training = False
-        X_test, Y_test = self.dl.get_batch(batch_size)
-        acc = (self.__call__(X_test).argmax(axis=1) == Y_test).mean().item()
-        print(f"step {step:4d}, loss {loss.item():.2f}, acc {acc*100.:.2f}%")
-
-    safe_save(get_state_dict(self), f"data/model/{self.model_name}.safetensors")
 
   def batch_inference(self, whole, chunk_size=64, batch_size=64):
     original_shape = whole.shape

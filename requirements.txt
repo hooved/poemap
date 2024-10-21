@@ -3,3 +3,5 @@ Pillow
 opencv-python
 scikit-image
 scipy
+wandb
+datasets

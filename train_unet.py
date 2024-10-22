@@ -4,9 +4,6 @@ from typing import Tuple, Optional, Union
 from tinygrad import Tensor, TinyJit, nn
 from tinygrad.nn.state import safe_save, get_state_dict
 
-if WANDB := os.getenv("WANDB"):
-  import wandb
-
 def multiclass_dice_loss(preds, targets, smooth=1e-6):
     """
     Args:
@@ -29,9 +26,9 @@ def multiclass_dice_loss(preds, targets, smooth=1e-6):
     dice_loss = 1 - dice_score.mean()
     return dice_loss
 
-def train(model, patch_size: Optional[Tuple[int]]=(64,64), batch_size: Optional[int]=128,
+def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
           steps: Optional[int]=500, lr=0.001):
-  model.dl.patch_size = patch_size
+  model.dl.patch_size = (patch_size, patch_size)
   optim = nn.optim.Adam(nn.state.get_parameters(model), lr=lr)
   def step():
     Tensor.training = True 
@@ -68,21 +65,23 @@ def train(model, patch_size: Optional[Tuple[int]]=(64,64), batch_size: Optional[
   safe_save(get_state_dict(model), f"data/model/{model.model_name}.safetensors")
 
 if __name__=="__main__":
-  model_name = "UNet1"
+  model_name = "UNet2"
   model = UNet(model_name)
   config = {}
   patch_size = config["patch_size"] = 64
-  num_steps = config["num_steps"] = 300
+  num_steps = config["num_steps"] = 200
   batch_size = config["batch_size"] = 128
   lr = config["learning_rate"] = 0.001
-  config = {
-    "patch_size": patch_size,
-    "num_steps": num_steps,
-    "batch_size": batch_size,
-    "learning_rate": lr,
-  }
 
-  if WANDB:
-    wandb.init(project="poemap", config=config)
+  if WANDB := os.getenv("WANDB"):
+    os.environ['WANDB_HOST'] = 'poemap'
+    import wandb
+    settings={
+        "_disable_stats": True,  # disable collecting system metrics
+        "_disable_meta": True,  # disable collecting system metadata (including hardware info)
+        "_disable_machine_info": True,  # disable collecting system metadata (including hardware info)
+        "console": "off",  # disable capturing stdout/stderr
+    }
+    wandb.init(project="poemap", settings=settings, config=config)
 
   train(model, patch_size=patch_size, steps=num_steps, batch_size=batch_size, lr=lr)

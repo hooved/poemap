@@ -27,10 +27,11 @@ def multiclass_dice_loss(preds, targets, smooth=1e-6):
     return dice_loss
 
 def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
-          ga_max_batch: int=128, steps: Optional[int]=500, lr=0.001):
+          ga_max_batch: int=64, steps: Optional[int]=500, lr=0.001):
 
   # accumulate gradients if needed
   batch_size_schedule = [ga_max_batch for _ in range(batch_size // ga_max_batch)] + [batch_size % ga_max_batch]
+  batch_size_schedule = [x for x in batch_size_schedule if x > 0]
   
   model.dl.patch_size = (patch_size, patch_size)
   optim = nn.optim.Adam(nn.state.get_parameters(model), lr=lr)
@@ -38,21 +39,26 @@ def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
   @TinyJit
   def train_step():
     optim.zero_grad()
-    acc_loss = 0
+    #acc_loss = 0
 
     for ga_bs in batch_size_schedule:
       X, Y = model.dl.get_batch(ga_bs)
       pred = model.__call__(X)
       s = pred.shape
-      loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
+      loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)) * ga_bs / batch_size
+      loss.backward()
+      #acc_loss = acc_loss + loss.backward()
       weight = 1
       #combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
-      combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)) * ga_bs / batch_size
-      combined_loss.backward()
-      acc_loss = acc_loss + combined_loss
+      loss = weight * multiclass_dice_loss(pred, Y) * ga_bs / batch_size
+      loss.backward()
+      #loss.backward()
+      #acc_loss = acc_loss + loss.backward()
 
     optim.step()
-    return acc_loss.realize()
+    return loss.realize()
+    #return loss.realize()
+    #return acc_loss.realize()
 
   @TinyJit
   def eval_step():
@@ -81,7 +87,7 @@ if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 64
   num_steps = config["num_steps"] = 600
-  batch_size = config["batch_size"] = 512
+  batch_size = config["batch_size"] = 256
   lr = config["learning_rate"] = 0.01
   model_name = config["model_name"] = "UNet5"
 

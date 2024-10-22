@@ -28,7 +28,6 @@ class DataLoader:
   def get_image_mask_pairs(self):
     ret = []
     for subdir in os.listdir(self.image_dir):
-      if subdir != "3": continue
       for file in os.listdir(os.path.join(self.image_dir, subdir)):
         im_file = os.path.join(self.image_dir, subdir, file)
         mask_file = os.path.join(self.mask_dir, subdir + ".npz")

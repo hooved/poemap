@@ -30,36 +30,47 @@ def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
           ga_max_batch: int=128, steps: Optional[int]=500, lr=0.001):
 
   # accumulate gradients if needed
-  #batch_size_schedule = [ga_max_batch for _ in range(batch_size // ga_max_batch)] + [batch_size % ga_max_batch]
+  batch_size_schedule = [ga_max_batch for _ in range(batch_size // ga_max_batch)] + [batch_size % ga_max_batch]
   
   model.dl.patch_size = (patch_size, patch_size)
   optim = nn.optim.Adam(nn.state.get_parameters(model), lr=lr)
 
   @TinyJit
-  def train_step(model, X, Y):
+  def train_step():
     optim.zero_grad()
-    pred = model.__call__(X)
-    s = pred.shape
-    loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
-    weight = 1
-    combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
+    acc_loss = 0
+
+    for ga_bs in batch_size_schedule:
+      X, Y = model.dl.get_batch(ga_bs)
+      pred = model.__call__(X)
+      s = pred.shape
+      loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
+      weight = 1
+      #combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
+      combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)) * ga_bs / batch_size
+      combined_loss.backward()
+      acc_loss = acc_loss + combined_loss
+
     optim.step()
-    return combined_loss.realize()
+    return acc_loss.realize()
 
   @TinyJit
-  def eval_step(model, X_test, Y_test):
-    acc = (model.__call__(X_test).argmax(axis=1) == Y_test).mean()
+  def eval_step():
+    acc = 0
+    for ga_bs in batch_size_schedule:
+      X_test, Y_test = model.dl.get_batch(ga_bs)
+      accumulate = (model.__call__(X_test).argmax(axis=1) == Y_test).mean()
+      accumulate = accumulate * ga_bs / batch_size
+      acc = acc + accumulate
     return acc.realize()
 
   for i in range(steps):
     Tensor.training = True
-    X, Y = model.dl.get_batch(batch_size)
-    loss = train_step(model, X, Y).item()
+    loss = train_step().item()
     acc = None
     if i%5 == 0:
       Tensor.training = False
-      X, Y = model.dl.get_batch(batch_size)
-      acc = eval_step(model, X, Y).item()
+      acc = eval_step().item()
       print(f"step {i:4d}, loss {loss:.4f}, acc {acc*100.:.2f}%")
     if WANDB:
       wandb.log({"step": i, "loss": loss, "accuracy": acc})
@@ -70,9 +81,9 @@ if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 64
   num_steps = config["num_steps"] = 600
-  batch_size = config["batch_size"] = 128
+  batch_size = config["batch_size"] = 512
   lr = config["learning_rate"] = 0.01
-  model_name = config["model_name"] = "UNet4"
+  model_name = config["model_name"] = "UNet5"
 
   model = UNet(model_name)
 

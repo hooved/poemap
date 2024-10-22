@@ -1,4 +1,4 @@
-import os, sys
+import os, sys, math
 from models import UNet, AttentionUNet
 from typing import Tuple, Optional, Union
 from tinygrad import Tensor, TinyJit, nn
@@ -27,51 +27,54 @@ def multiclass_dice_loss(preds, targets, smooth=1e-6):
     return dice_loss
 
 def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
-          steps: Optional[int]=500, lr=0.001):
+          ga_max_batch: int=128, steps: Optional[int]=500, lr=0.001):
+
+  # accumulate gradients if needed
+  #batch_size_schedule = [ga_max_batch for _ in range(batch_size // ga_max_batch)] + [batch_size % ga_max_batch]
+  
   model.dl.patch_size = (patch_size, patch_size)
   optim = nn.optim.Adam(nn.state.get_parameters(model), lr=lr)
-  def step():
-    Tensor.training = True 
-    X, Y = model.dl.get_batch(batch_size)
+
+  @TinyJit
+  def train_step(model, X, Y):
     optim.zero_grad()
     pred = model.__call__(X)
     s = pred.shape
-
-    # uncomment this block to incorporate dice loss
     loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
     weight = 1
     combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
     optim.step()
-    return combined_loss
+    return combined_loss.realize()
 
-    # Need to flatten for cross_entropy to work
-    loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)).backward()
-    optim.step()
-    return loss
-  jit_step = TinyJit(step)
+  @TinyJit
+  def eval_step(model, X_test, Y_test):
+    acc = (model.__call__(X_test).argmax(axis=1) == Y_test).mean()
+    return acc.realize()
 
-  for step in range(steps):
-    loss = jit_step().item()
+  for i in range(steps):
+    Tensor.training = True
+    X, Y = model.dl.get_batch(batch_size)
+    loss = train_step(model, X, Y).item()
     acc = None
-    if step%5 == 0:
+    if i%5 == 0:
       Tensor.training = False
-      #X_test, Y_test = model.dl.get_batch(batch_size, test=True)
-      X_test, Y_test = model.dl.get_batch(batch_size)
-      acc = (model.__call__(X_test).argmax(axis=1) == Y_test).mean().item()
-      print(f"step {step:4d}, loss {loss:.2f}, acc {acc*100.:.2f}%")
+      X, Y = model.dl.get_batch(batch_size)
+      acc = eval_step(model, X, Y).item()
+      print(f"step {i:4d}, loss {loss:.4f}, acc {acc*100.:.2f}%")
     if WANDB:
-      wandb.log({"step": step, "loss": loss, "accuracy": acc})
+      wandb.log({"step": i, "loss": loss, "accuracy": acc})
 
   safe_save(get_state_dict(model), f"data/model/{model.model_name}.safetensors")
 
 if __name__=="__main__":
-  model_name = "UNet2"
-  model = UNet(model_name)
   config = {}
   patch_size = config["patch_size"] = 64
-  num_steps = config["num_steps"] = 200
+  num_steps = config["num_steps"] = 600
   batch_size = config["batch_size"] = 128
-  lr = config["learning_rate"] = 0.001
+  lr = config["learning_rate"] = 0.01
+  model_name = config["model_name"] = "UNet4"
+
+  model = UNet(model_name)
 
   if WANDB := os.getenv("WANDB"):
     os.environ['WANDB_HOST'] = 'poemap'

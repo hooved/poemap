@@ -42,6 +42,7 @@ class UNet:
 
     self.middle = [
       Tensor.max_pool2d, *doubleconv(mid_chan * 2**(depth-1), mid_chan * 2**depth),
+      Tensor.dropout,
       ConvTranspose2d(mid_chan * 2**depth, mid_chan * 2**(depth-1), kernel_size=2, stride=2),
     ]
 

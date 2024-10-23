@@ -27,7 +27,7 @@ def multiclass_dice_loss(preds, targets, smooth=1e-6):
     return dice_loss
 
 def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
-          ga_max_batch: int=64, steps: Optional[int]=500, lr=0.001):
+          ga_max_batch: int=128, steps: Optional[int]=500, lr=0.001):
 
   # accumulate gradients if needed
   batch_size_schedule = [ga_max_batch for _ in range(batch_size // ga_max_batch)] + [batch_size % ga_max_batch]
@@ -73,11 +73,12 @@ def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
   for i in range(steps):
     Tensor.training = True
     loss = train_step().item()
-    acc = None
+    acc = 0
     if i%5 == 0:
-      Tensor.training = False
-      acc = eval_step().item()
-      print(f"step {i:4d}, loss {loss:.4f}, acc {acc*100.:.2f}%")
+      #Tensor.training = False
+      #acc = eval_step().item()
+      #print(f"step {i:4d}, loss {loss:.4f}, acc {acc*100.:.2f}%")
+      print(f"step {i:4d}, loss {loss:.4f}")
     if WANDB:
       wandb.log({"step": i, "loss": loss, "accuracy": acc})
 
@@ -86,12 +87,13 @@ def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
 if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 64
-  num_steps = config["num_steps"] = 600
-  batch_size = config["batch_size"] = 256
-  lr = config["learning_rate"] = 0.01
-  model_name = config["model_name"] = "UNet5"
+  num_steps = config["num_steps"] = 1000
+  batch_size = config["batch_size"] = 128
+  lr = config["learning_rate"] = 0.001
+  model_name = config["model_name"] = "AttentionUNet6"
 
-  model = UNet(model_name)
+  #model = UNet(model_name)
+  model = AttentionUNet(model_name)
 
   if WANDB := os.getenv("WANDB"):
     os.environ['WANDB_HOST'] = 'poemap'

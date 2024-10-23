@@ -48,10 +48,10 @@ def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
       loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)) * ga_bs / batch_size
       loss.backward()
       #acc_loss = acc_loss + loss.backward()
-      weight = 1
+      #weight = 1
       #combined_loss = (loss + weight * multiclass_dice_loss(pred, Y)).backward()
-      loss = weight * multiclass_dice_loss(pred, Y) * ga_bs / batch_size
-      loss.backward()
+      #loss = weight * multiclass_dice_loss(pred, Y) * ga_bs / batch_size
+      #loss.backward()
       #loss.backward()
       #acc_loss = acc_loss + loss.backward()
 
@@ -87,10 +87,10 @@ def train(model, patch_size: Optional[int]=64, batch_size: Optional[int]=128,
 if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 64
-  num_steps = config["num_steps"] = 1000
+  num_steps = config["num_steps"] = 300
   batch_size = config["batch_size"] = 128
   lr = config["learning_rate"] = 0.001
-  model_name = config["model_name"] = "AttentionUNet6"
+  model_name = config["model_name"] = "AttentionUNet8"
 
   #model = UNet(model_name)
   model = AttentionUNet(model_name)

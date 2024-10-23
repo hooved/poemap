@@ -69,6 +69,7 @@ class UNet:
     original_shape = whole.shape
     chunks = self.dl.get_model_input_chunks(whole, chunk_size=chunk_size)
     def run(self, x):
+      Tensor.training = False
       return self.__call__(x).argmax(axis=1, keepdim=True).cast(dtypes.uint8).permute(0,2,3,1).numpy()
     jit_run = TinyJit(run)
     # Inference on the whole image takes too much GPU memory, so we run inference on subsets

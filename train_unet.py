@@ -4,27 +4,44 @@ from typing import Tuple, Optional, Union
 from tinygrad import Tensor, TinyJit, nn
 from tinygrad.nn.state import safe_save, get_state_dict
 
-def multiclass_dice_loss(preds, targets, smooth=1e-6):
-    """
-    Args:
-        preds (Tensor): Predicted logits with shape [batch, num_classes, H, W].
-        targets (Tensor): Ground truth labels with shape [batch, H, W].
-    Returns:
-        Tensor: Dice Loss.
-    """
-    num_classes = preds.shape[1]
-    preds = preds.softmax(axis=1)
-    targets_one_hot = targets.one_hot(num_classes=num_classes)  # Shape: [batch, H, W, num_classes]
-    targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()  # Shape: [batch, num_classes, H, W]
-    preds_flat = preds.view(preds.shape[0], preds.shape[1], -1)
-    targets_flat = targets_one_hot.view(targets_one_hot.shape[0], targets_one_hot.shape[1], -1)
+def lossfxn_flatten(preds: Tensor, targets: Tensor):
+  num_classes = preds.shape[1]
+  preds = preds.softmax(axis=1)
+  targets_one_hot = targets.one_hot(num_classes=num_classes)  # Shape: [batch, H, W, num_classes]
+  targets_one_hot = targets_one_hot.permute(0, 3, 1, 2).float()  # Shape: [batch, num_classes, H, W]
+  preds = preds.view(preds.shape[0], preds.shape[1], -1)
+  targets = targets_one_hot.view(targets_one_hot.shape[0], targets_one_hot.shape[1], -1)
+  return preds, targets
 
-    intersection = (preds_flat * targets_flat).sum(axis=2)
-    numerator = 2.0 * intersection + smooth
-    denominator = preds_flat.sum(axis=2) + targets_flat.sum(axis=2) + smooth
-    dice_score = numerator / denominator
-    dice_loss = 1 - dice_score.mean()
-    return dice_loss
+def multiclass_dice_loss(preds: Tensor, targets: Tensor, smooth=1e-6):
+  preds, targets = lossfxn_flatten(preds, targets)
+  intersection = (preds * targets).sum(axis=2)
+  numerator = 2.0 * intersection + smooth
+  denominator = preds.sum(axis=2) + targets.sum(axis=2) + smooth
+  dice_score = numerator / denominator
+  dice_loss = 1 - dice_score.mean()
+  return dice_loss
+
+def multiclass_tversky_loss(preds: Tensor, targets: Tensor, smooth=1e-6, alpha=0.5, beta=0.5):
+  preds, targets = lossfxn_flatten(preds, targets)
+  true_pos = (preds * targets).sum(axis=2)
+  false_neg = (targets * (1 - preds)).sum(axis=2)
+  false_pos = ((1 - targets) * preds).sum(axis=2)
+  tversky_score = (true_pos + smooth) / (true_pos + alpha * false_neg + beta * false_pos + smooth)
+  return 1 - tversky_score.mean()
+
+def weird_loss(preds, targets, false_pos_tolerance=0.005, smooth=1e-6):
+  preds, targets = lossfxn_flatten(preds, targets)
+  total_pos = targets[:,1,:].sum()
+
+  true_pos_loss = 1 - ((preds * targets).sum(axis=2) / (total_pos + smooth)).mean()
+  false_pos_loss = (((1-targets) * preds).sum(axis=2) / (total_pos + smooth) / false_pos_tolerance).mean()
+  return true_pos_loss + false_pos_loss
+
+def false_pos_loss(preds: Tensor, targets: Tensor, smooth=1e-6, alpha=0.5, beta=0.5):
+  preds, targets = lossfxn_flatten(preds, targets)
+  false_pos = ((1 - targets) * preds).sum(axis=2)
+  return (false_pos / preds.shape[2]).mean()
 
 def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int=128,
           ga_max_batch: int=256, steps: int=500, lr: float=0.001):
@@ -37,7 +54,7 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
   optim = nn.optim.Adam(nn.state.get_parameters(model), lr=lr)
 
   #@TinyJit
-  # GPU memory explodes with TinyJit, currently
+  # GPU memory explodes with TinyJit, currently, related to gradient accumulation steps
   def train_step():
     optim.zero_grad()
     acc_loss = 0
@@ -48,11 +65,14 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
       loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1)) * ga_bs / batch_size
       loss.backward()
       acc_loss += loss.item()
-      loss = multiclass_dice_loss(pred, Y) * ga_bs / batch_size
-      loss.backward()
+      #loss = multiclass_dice_loss(pred, Y) * ga_bs / batch_size
+      #loss = multiclass_tversky_loss(pred, Y, beta=5) * ga_bs / batch_size
+      #loss = 3 * false_pos_loss(pred, Y) * ga_bs / batch_size
+      #loss = weird_loss(pred, Y) * ga_bs / batch_size
+      #loss.backward()
       if len(batch_size_schedule) > 1:
         cleanup_grads(optim)
-      acc_loss += loss.item()
+      #acc_loss += loss.item()
     optim.step()
     return acc_loss
 
@@ -93,10 +113,10 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
 if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 32
-  num_steps = config["num_steps"] = 150
-  batch_size = config["batch_size"] = 256
-  lr = config["learning_rate"] = 0.001
-  model_name = config["model_name"] = "UNet2"
+  num_steps = config["num_steps"] = 500
+  batch_size = config["batch_size"] = 1024
+  lr = config["learning_rate"] = 0.004
+  model_name = config["model_name"] = "UNet5"
 
   model = UNet(model_name)
   #model = AttentionUNet(model_name, depth=1)

@@ -5,6 +5,7 @@ from enum import IntEnum
 class ClientHeader(IntEnum):
   PROCESS_MINIMAP = 1
   CLOSE_CONNECTION = 2
+  SAVE_FRAME = 3
 
 async def receive_exact(reader: asyncio.StreamReader, n: int) -> bytes:
   data = b''

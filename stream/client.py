@@ -12,9 +12,12 @@ class AsyncState:
     self.data = None
     self.lock = asyncio.Lock()
     self.data_ready = asyncio.Event()
+    self.stream_minimap = False
+    self.stream_frames = False
     self.stop_stream = True
     self.stop_program = False
-    keyboard.add_hotkey("ctrl+alt+q", self.trigger_start_stream)
+    keyboard.add_hotkey("ctrl+alt+q", self.trigger_stream_minimap)
+    keyboard.add_hotkey("ctrl+alt+z", self.trigger_stream_frames)
     keyboard.add_hotkey("ctrl+alt+w", self.trigger_stop_stream)
     keyboard.add_hotkey("ctrl+alt+e", self.trigger_stop_program)
 
@@ -29,11 +32,18 @@ class AsyncState:
       self.data_ready.clear()
       return self.data
 
-  def trigger_start_stream(self):
+  def trigger_stream_minimap(self):
     self.stop_stream = False
+    self.stream_minimap = True
+
+  def trigger_stream_frames(self):
+    self.stop_stream = False
+    self.stream_frames = True
 
   def trigger_stop_stream(self):
     self.stop_stream = True
+    self.stream_minimap = False
+    self.stream_frames = False
 
   def trigger_stop_program(self):
     self.stop_program = True
@@ -154,15 +164,45 @@ def minimap_append_frame(minimap, diff_frames, origin, last_position):
   minimap[frame_top : frame_top+H_frame, frame_left : frame_left+W_frame] = diff_frames[1]
   return minimap, origin, current_position
 
+async def send_frames(state: AsyncState, target_fps=0.5, box_radius=600):
+  reader, writer = await asyncio.open_connection('localhost', 50000)
+  frame_time = 1 / target_fps
+  print("Starting stream...")
+  while True:
+    last_capture_time = time.perf_counter()
+    frame = capture_screen(box_radius)
+    await send_header(writer, ClientHeader.SAVE_FRAME)
+    await send_array(writer, frame)
+    finished = await receive_int(reader)
+    assert finished == 42
+
+    if state.stop_stream or state.stop_program:
+      print("Stopping stream...")
+      await send_header(writer, ClientHeader.CLOSE_CONNECTION)
+      writer.close()
+      await writer.wait_closed()
+      return
+
+    elapsed = time.perf_counter() - last_capture_time
+    if elapsed < frame_time:
+      await asyncio.sleep(frame_time - elapsed)
+
 async def main():
   state = AsyncState()
 
   while True:
     if not state.stop_stream:
-      async with asyncio.TaskGroup() as tg:
-        producer = tg.create_task(produce_minimap(state, target_fps=1))
-        consumer = tg.create_task(consume_minimap(state))
-        state = AsyncState()
+
+      if state.stream_minimap:
+        async with asyncio.TaskGroup() as tg:
+          producer = tg.create_task(produce_minimap(state, target_fps=1))
+          consumer = tg.create_task(consume_minimap(state))
+          state = AsyncState()
+
+      elif state.stream_frames:
+        async with asyncio.TaskGroup() as tg:
+          producer = tg.create_task(send_frames(state, target_fps=1))
+          state = AsyncState()
 
     if state.stop_program:
       sys.exit()

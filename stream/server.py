@@ -44,6 +44,16 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
         Image.fromarray(mask * 255, mode="L").save("failed_mask.png")
         assert False
 
+    elif header == ClientHeader.SAVE_FRAME:
+      frame = await receive_array(reader, dtype=np.uint8)
+      save_dir = os.path.join("data", "background", "collect")
+      os.makedirs(save_dir, exist_ok=True)
+      Image.fromarray(frame).save(os.path.join(save_dir, f"{timestamp}.png"))
+      timestamp += 1
+      response = 42
+      writer.write(response.to_bytes(4, byteorder="big"))
+      await writer.drain()
+
     elif header == ClientHeader.CLOSE_CONNECTION:
       print("closing connection")
       writer.close()

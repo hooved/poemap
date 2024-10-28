@@ -76,6 +76,19 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
     optim.step()
     return acc_loss
 
+  @TinyJit
+  def jit_train_step():
+    assert len(batch_size_schedule) == 1
+    bs = batch_size_schedule[0]
+    optim.zero_grad()
+    X, Y = model.dl.get_batch(bs)
+    pred = model.__call__(X)
+    s = pred.shape
+    loss = pred.permute(0,2,3,1).reshape(-1, s[1]).cross_entropy(Y.reshape(-1))
+    loss.backward()
+    optim.step()
+    return loss.realize()
+
   def cleanup_grads(optim: nn.optim.LAMB):
     # hack to accumulate gradients without memory leak
     for t in optim.params:
@@ -98,10 +111,11 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
     Tensor.training = True
     #loss = train_step().item()
     acc = 0
-    loss = train_step()
-    if i%5 == 0:
-      print(f"step {i:4d}, loss {loss:.4f}")
-    if i%15 == 0 and i != 0:
+    #loss = train_step()
+    loss = jit_train_step().item()
+    if i%20 == 0:
+      print(f"step {i:4d}, loss {loss:.7f}")
+    if i%200 == 0 and i != 0:
         safe_save(get_state_dict(model), f"data/model/{model.model_name}_{i}.safetensors")
       #Tensor.training = False
       #acc = eval_step().item()
@@ -113,12 +127,12 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
 if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 32
-  num_steps = config["num_steps"] = 500
-  batch_size = config["batch_size"] = 1024
-  lr = config["learning_rate"] = 0.004
-  model_name = config["model_name"] = "UNet5"
+  num_steps = config["num_steps"] = 4000
+  batch_size = config["batch_size"] = 256
+  lr = config["learning_rate"] = 0.002
+  model_name = config["model_name"] = "UNet9"
 
-  model = UNet(model_name)
+  model = UNet(model_name, depth=3, width=2)
   #model = AttentionUNet(model_name, depth=1)
 
   if WANDB := os.getenv("WANDB"):

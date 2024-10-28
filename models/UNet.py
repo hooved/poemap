@@ -36,7 +36,7 @@ class ResBlock():
     return self.shortcut(x) + h
 
 class UNet:
-  def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
+  def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2, width=1):
     self.model_name = model_name
     self.dl = DataLoader(
       #image_dir="data/auto_crop",
@@ -45,22 +45,24 @@ class UNet:
       mask_dir="data/mask_50",
     )
     self.save_intermediates = [
-      [Conv2d(in_chan, mid_chan, kernel_size=3, padding=1), ResBlock(mid_chan, mid_chan)]
+      [Conv2d(in_chan, mid_chan, kernel_size=3, padding=1), *(width * [ResBlock(mid_chan, mid_chan)])]
     ]
-    self.consume_intermediates = [
-      [ResBlock(mid_chan * 2, mid_chan), GroupNorm(mid_chan//16, mid_chan), Tensor.relu, Conv2d(mid_chan, out_chan, kernel_size=1)],
-    ]
+    self.consume_intermediates = [[
+      ResBlock(mid_chan * 2, mid_chan), *((width-1) * [ResBlock(mid_chan, mid_chan)]),
+      GroupNorm(mid_chan//16, mid_chan), Tensor.relu, Conv2d(mid_chan, out_chan, kernel_size=1)
+    ]]
 
     for i in range(depth-1):
-      self.save_intermediates += [[Tensor.max_pool2d, ResBlock(mid_chan * 2**i, mid_chan * 2**(i+1))]]
-      self.consume_intermediates = [
-          [ResBlock(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
-          ConvTranspose2d(mid_chan * 2**(i+1), mid_chan * 2**i, kernel_size=2, stride=2)]
-        ] + self.consume_intermediates
+      chan = mid_chan * 2**i
+      self.save_intermediates += [[Tensor.max_pool2d, *((width-1) * [ResBlock(chan,chan)]), ResBlock(chan,chan*2)]]
+      self.consume_intermediates = [[
+        ResBlock(chan*4, chan*2), *((width-1) * [ResBlock(chan*2, chan*2)]), ConvTranspose2d(chan*2, chan, kernel_size=2, stride=2)
+      ]] + self.consume_intermediates
 
+    chan = mid_chan * 2**(depth-1)
     self.middle = [
-      Tensor.max_pool2d, ResBlock(mid_chan * 2**(depth-1), mid_chan * 2**depth),
-      ConvTranspose2d(mid_chan * 2**depth, mid_chan * 2**(depth-1), kernel_size=2, stride=2),
+      Tensor.max_pool2d, *((width-1) * [ResBlock(chan, chan)]), ResBlock(chan, chan*2),
+      ConvTranspose2d(chan*2, chan, kernel_size=2, stride=2),
     ]
 
   def __call__(self, x):

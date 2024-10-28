@@ -1,5 +1,5 @@
 from tinygrad import Tensor, TinyJit, nn
-from tinygrad.nn import Conv2d, ConvTranspose2d, BatchNorm2d
+from tinygrad.nn import Conv2d, ConvTranspose2d, LayerNorm2d, GroupNorm
 from tinygrad.dtype import dtypes
 from tinygrad.nn.state import safe_load, safe_save, get_state_dict, load_state_dict
 import numpy as np
@@ -8,14 +8,32 @@ from dataloader import DataLoader
 """
 Adapted from:
 https://github.com/milesial/Pytorch-UNet
-https://github.com/tinygrad/tinygrad/examples/stable_diffusion.py
+https://github.com/tinygrad/tinygrad/examples/stable_diffusion.py and tinygrad/extra/models/unet.py
 https://docs.tinygrad.org/mnist/
 https://github.com/LeeJunHyun/Image_Segmentation/blob/master/network.py
 """
 
 def doubleconv(in_chan, out_chan):
-  return [Conv2d(in_chan, out_chan, kernel_size=3, padding=1), BatchNorm2d(out_chan), Tensor.relu,
-    Conv2d(out_chan, out_chan, kernel_size=3, padding=1), BatchNorm2d(out_chan), Tensor.relu]
+  assert out_chan % 16 == 0
+  num_groups = out_chan // 16
+  shortcut = lambda x: x
+  if in_chan != out_chan:
+    shortcut = Conv2d(in_chan, out_chan, 1)
+  return [Conv2d(in_chan, out_chan, kernel_size=3, padding=1), GroupNorm(num_groups, out_chan), Tensor.relu,
+    Conv2d(out_chan, out_chan, kernel_size=3, padding=1), GroupNorm(num_groups, out_chan), Tensor.relu]
+
+class ResBlock():
+  def __init__(self, in_chan, out_chan):
+    assert in_chan % 16 == 0 and out_chan % 16 == 0
+
+    self.blocks = [GroupNorm(in_chan//16, in_chan), Tensor.relu, Conv2d(in_chan, out_chan, kernel_size=3, padding=1), 
+    GroupNorm(out_chan//16, out_chan), Tensor.relu, Conv2d(out_chan, out_chan, kernel_size=3, padding=1),]
+
+    self.shortcut = Conv2d(in_chan, out_chan, 1) if in_chan != out_chan else (lambda x: x)
+
+  def __call__(self, x: Tensor):
+    h = x.sequential(self.blocks)
+    return self.shortcut(x) + h
 
 class UNet:
   def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
@@ -27,21 +45,26 @@ class UNet:
       mask_dir="data/mask_50",
     )
     self.save_intermediates = [
-      doubleconv(in_chan, mid_chan), 
+      #doubleconv(in_chan, mid_chan), 
+      [Conv2d(in_chan, mid_chan, kernel_size=3, padding=1), ResBlock(mid_chan, mid_chan)]
     ]
     self.consume_intermediates = [
-      [*doubleconv(mid_chan * 2, mid_chan), Conv2d(mid_chan, out_chan, kernel_size=1)],
+      [ResBlock(mid_chan * 2, mid_chan), GroupNorm(mid_chan//16, mid_chan), Tensor.relu, Conv2d(mid_chan, out_chan, kernel_size=1)],
+      #[*doubleconv(mid_chan * 2, mid_chan), Conv2d(mid_chan, out_chan, kernel_size=1)],
     ]
 
     for i in range(depth-1):
-      self.save_intermediates += [[Tensor.max_pool2d, *doubleconv(mid_chan * 2**i, mid_chan * 2**(i+1))]]
+      #self.save_intermediates += [[Tensor.max_pool2d, *doubleconv(mid_chan * 2**i, mid_chan * 2**(i+1))]]
+      self.save_intermediates += [[Tensor.max_pool2d, ResBlock(mid_chan * 2**i, mid_chan * 2**(i+1))]]
       self.consume_intermediates = [
-          [*doubleconv(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
+          #[*doubleconv(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
+          [ResBlock(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
           ConvTranspose2d(mid_chan * 2**(i+1), mid_chan * 2**i, kernel_size=2, stride=2)]
         ] + self.consume_intermediates
 
     self.middle = [
-      Tensor.max_pool2d, *doubleconv(mid_chan * 2**(depth-1), mid_chan * 2**depth),
+      #Tensor.max_pool2d, *doubleconv(mid_chan * 2**(depth-1), mid_chan * 2**depth),
+      Tensor.max_pool2d, ResBlock(mid_chan * 2**(depth-1), mid_chan * 2**depth),
       ConvTranspose2d(mid_chan * 2**depth, mid_chan * 2**(depth-1), kernel_size=2, stride=2),
     ]
 
@@ -87,9 +110,9 @@ class UNet:
 
 class AttentionBlock:
   def __init__(self, g_chan, l_chan, int_chan):
-    self.W_g = [Conv2d(g_chan, int_chan, 1, stride=1), BatchNorm2d(int_chan)]
-    self.W_x = [Conv2d(l_chan, int_chan, 1, stride=1), BatchNorm2d(int_chan)]
-    self.psi = [Conv2d(int_chan, 1, 1, stride=1), BatchNorm2d(1), Tensor.sigmoid]
+    self.W_g = [Conv2d(g_chan, int_chan, 1, stride=1), GroupNorm(int_chan//16, int_chan)]
+    self.W_x = [Conv2d(l_chan, int_chan, 1, stride=1), GroupNorm(int_chan//16, int_chan)]
+    self.psi = [Conv2d(int_chan, 1, 1, stride=1), LayerNorm2d(), Tensor.sigmoid]
 
   def __call__(self, g: Tensor, x: Tensor):
     psi = Tensor.relu(g.sequential(self.W_g) + x.sequential(self.W_x))

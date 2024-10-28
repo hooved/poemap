@@ -114,7 +114,7 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
     #loss = train_step()
     loss = jit_train_step().item()
     if i%20 == 0:
-      print(f"step {i:4d}, loss {loss:.7f}")
+      print(f"step {i:5d}, loss {loss:.7f}")
     if i%200 == 0 and i != 0:
         safe_save(get_state_dict(model), f"data/model/{model.model_name}_{i}.safetensors")
       #Tensor.training = False
@@ -130,9 +130,9 @@ if __name__=="__main__":
   num_steps = config["num_steps"] = 4000
   batch_size = config["batch_size"] = 256
   lr = config["learning_rate"] = 0.002
-  model_name = config["model_name"] = "UNet9"
+  model_name = config["model_name"] = "UNet10"
 
-  model = UNet(model_name, depth=3, width=2)
+  model = UNet(model_name, depth=3, width=3)
   #model = AttentionUNet(model_name, depth=1)
 
   if WANDB := os.getenv("WANDB"):

@@ -45,23 +45,28 @@ class UNet:
       mask_dir="data/mask_50",
     )
     self.save_intermediates = [
-      [Conv2d(in_chan, mid_chan, kernel_size=3, padding=1), *(width * [ResBlock(mid_chan, mid_chan)])]
+      [Conv2d(in_chan, mid_chan, kernel_size=3, padding=1), ResBlock(mid_chan, mid_chan)],
+      *((width-1) * [[ResBlock(mid_chan, mid_chan)]]),
     ]
-    self.consume_intermediates = [[
-      ResBlock(mid_chan * 2, mid_chan), *((width-1) * [ResBlock(mid_chan, mid_chan)]),
-      GroupNorm(mid_chan//16, mid_chan), Tensor.relu, Conv2d(mid_chan, out_chan, kernel_size=1)
-    ]]
+    self.consume_intermediates = [
+      *((width-1) * [[ResBlock(mid_chan * 2, mid_chan)]]),
+      [ResBlock(mid_chan * 2, mid_chan), GroupNorm(mid_chan//16, mid_chan), Tensor.relu, Conv2d(mid_chan, out_chan, kernel_size=1)],
+    ]
 
     for i in range(depth-1):
       chan = mid_chan * 2**i
-      self.save_intermediates += [[Tensor.max_pool2d, *((width-1) * [ResBlock(chan,chan)]), ResBlock(chan,chan*2)]]
-      self.consume_intermediates = [[
-        ResBlock(chan*4, chan*2), *((width-1) * [ResBlock(chan*2, chan*2)]), ConvTranspose2d(chan*2, chan, kernel_size=2, stride=2)
-      ]] + self.consume_intermediates
+      self.save_intermediates += [
+        [Tensor.max_pool2d, ResBlock(chan, chan*2)],
+        *((width-1) * [[ResBlock(chan*2, chan*2)]]),
+      ]
+      self.consume_intermediates = [
+        *((width-1) * [[ResBlock(chan*4, chan*2)]]), 
+        [ResBlock(chan*4, chan*2), ConvTranspose2d(chan*2, chan, kernel_size=2, stride=2)]
+      ] + self.consume_intermediates
 
     chan = mid_chan * 2**(depth-1)
     self.middle = [
-      Tensor.max_pool2d, *((width-1) * [ResBlock(chan, chan)]), ResBlock(chan, chan*2),
+      Tensor.max_pool2d, ResBlock(chan, chan*2),
       ConvTranspose2d(chan*2, chan, kernel_size=2, stride=2),
     ]
 

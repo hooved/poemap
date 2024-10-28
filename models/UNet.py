@@ -45,25 +45,20 @@ class UNet:
       mask_dir="data/mask_50",
     )
     self.save_intermediates = [
-      #doubleconv(in_chan, mid_chan), 
       [Conv2d(in_chan, mid_chan, kernel_size=3, padding=1), ResBlock(mid_chan, mid_chan)]
     ]
     self.consume_intermediates = [
       [ResBlock(mid_chan * 2, mid_chan), GroupNorm(mid_chan//16, mid_chan), Tensor.relu, Conv2d(mid_chan, out_chan, kernel_size=1)],
-      #[*doubleconv(mid_chan * 2, mid_chan), Conv2d(mid_chan, out_chan, kernel_size=1)],
     ]
 
     for i in range(depth-1):
-      #self.save_intermediates += [[Tensor.max_pool2d, *doubleconv(mid_chan * 2**i, mid_chan * 2**(i+1))]]
       self.save_intermediates += [[Tensor.max_pool2d, ResBlock(mid_chan * 2**i, mid_chan * 2**(i+1))]]
       self.consume_intermediates = [
-          #[*doubleconv(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
           [ResBlock(mid_chan * 2**(i+2), mid_chan * 2**(i+1)), 
           ConvTranspose2d(mid_chan * 2**(i+1), mid_chan * 2**i, kernel_size=2, stride=2)]
         ] + self.consume_intermediates
 
     self.middle = [
-      #Tensor.max_pool2d, *doubleconv(mid_chan * 2**(depth-1), mid_chan * 2**depth),
       Tensor.max_pool2d, ResBlock(mid_chan * 2**(depth-1), mid_chan * 2**depth),
       ConvTranspose2d(mid_chan * 2**depth, mid_chan * 2**(depth-1), kernel_size=2, stride=2),
     ]

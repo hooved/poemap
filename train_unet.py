@@ -44,7 +44,7 @@ def false_pos_loss(preds: Tensor, targets: Tensor, smooth=1e-6, alpha=0.5, beta=
   return (false_pos / preds.shape[2]).mean()
 
 def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int=128,
-          ga_max_batch: int=256, steps: int=500, lr: float=0.001):
+          ga_max_batch: int=512, steps: int=500, lr: float=0.001):
 
   # accumulate gradients if needed
   batch_size_schedule = [ga_max_batch for _ in range(batch_size // ga_max_batch)] + [batch_size % ga_max_batch]
@@ -128,11 +128,11 @@ if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 32
   num_steps = config["num_steps"] = 4000
-  batch_size = config["batch_size"] = 256
-  lr = config["learning_rate"] = 0.002
-  model_name = config["model_name"] = "UNet10"
+  batch_size = config["batch_size"] = 512
+  lr = config["learning_rate"] = 0.004
+  model_name = config["model_name"] = "AttentionUNet6"
 
-  model = UNet(model_name, depth=3, width=3)
+  model = AttentionUNet(model_name, depth=2, width=1)
   #model = AttentionUNet(model_name, depth=1)
 
   if WANDB := os.getenv("WANDB"):

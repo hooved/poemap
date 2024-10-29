@@ -114,7 +114,7 @@ class AttentionBlock:
   def __init__(self, g_chan, l_chan, int_chan):
     self.W_g = [Conv2d(g_chan, int_chan, 1, stride=1), GroupNorm(int_chan//16, int_chan)]
     self.W_x = [Conv2d(l_chan, int_chan, 1, stride=1), GroupNorm(int_chan//16, int_chan)]
-    self.psi = [Conv2d(int_chan, 1, 1, stride=1), LayerNorm2d(), Tensor.sigmoid]
+    self.psi = [Conv2d(int_chan, 1, 1, stride=1), LayerNorm2d(1), Tensor.sigmoid]
 
   def __call__(self, g: Tensor, x: Tensor):
     psi = Tensor.relu(g.sequential(self.W_g) + x.sequential(self.W_x))
@@ -122,13 +122,13 @@ class AttentionBlock:
     return x * psi
 
 class AttentionUNet(UNet):
-  def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2):
-    super().__init__(model_name, in_chan=in_chan, mid_chan=mid_chan, out_chan=out_chan, depth=depth)
+  def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2, width=1):
+    super().__init__(model_name, in_chan=in_chan, mid_chan=mid_chan, out_chan=out_chan, depth=depth, width=width)
 
     self.attention_blocks = []
     for i in range(depth):
       input_chan = mid_chan * 2**i
-      self.attention_blocks = [AttentionBlock(input_chan, input_chan, input_chan//2)] + self.attention_blocks
+      self.attention_blocks = width * [AttentionBlock(input_chan, input_chan, input_chan//2)] + self.attention_blocks
 
   def __call__(self, x):
     intermediates = []

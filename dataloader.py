@@ -15,7 +15,7 @@ class ImageMaskPair:
 
 class DataLoader:
   def __init__(self, image_dir, mask_dir, patch_size=(64, 64), normalize=True, 
-         flip_prob=0.5, rotate_prob=0.5, noise_prob=0,):
+         flip_prob=0.5, rotate_prob=0.5, noise_prob=0.5,):
     self.image_dir = image_dir
     self.mask_dir = mask_dir
     self.patch_size = patch_size

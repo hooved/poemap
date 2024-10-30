@@ -22,6 +22,14 @@ def doubleconv(in_chan, out_chan):
   return [Conv2d(in_chan, out_chan, kernel_size=3, padding=1), GroupNorm(num_groups, out_chan), Tensor.relu,
     Conv2d(out_chan, out_chan, kernel_size=3, padding=1), GroupNorm(num_groups, out_chan), Tensor.relu]
 
+class ChannelDropout:
+  def __init__(self, p=0.5):
+    self.p = p
+  
+  def __call__(self, x: Tensor):
+    if not Tensor.training or self.p == 0: return x
+    return x * (Tensor.rand(x.shape[0], x.shape[1], 1, 1, device=x.device) >= self.p) / (1.0 - self.p)
+
 class ResBlock():
   def __init__(self, in_chan, out_chan):
     assert in_chan % 16 == 0 and out_chan % 16 == 0
@@ -66,7 +74,7 @@ class UNet:
 
     chan = mid_chan * 2**(depth-1)
     self.middle = [
-      Tensor.max_pool2d, ResBlock(chan, chan*2),
+      Tensor.max_pool2d, ResBlock(chan, chan*2), ChannelDropout(p=0.5),
       ConvTranspose2d(chan*2, chan, kernel_size=2, stride=2),
     ]
 

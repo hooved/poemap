@@ -127,13 +127,14 @@ def train(model: Union[UNet, AttentionUNet], patch_size: int=64, batch_size: int
 if __name__=="__main__":
   config = {}
   patch_size = config["patch_size"] = 32
-  num_steps = config["num_steps"] = 4000
+  num_steps = config["num_steps"] = 20000
   batch_size = config["batch_size"] = 512
-  lr = config["learning_rate"] = 0.004
-  model_name = config["model_name"] = "AttentionUNet6"
+  lr = config["learning_rate"] = 0.0003
+  model_name = config["model_name"] = "AttentionUNet8"
+  #model_name = config["model_name"] = "UNet3"
 
-  model = AttentionUNet(model_name, depth=2, width=1)
-  #model = AttentionUNet(model_name, depth=1)
+  #model = UNet(model_name, depth=2, width=1)
+  model = AttentionUNet(model_name, depth=3)
 
   if WANDB := os.getenv("WANDB"):
     os.environ['WANDB_HOST'] = 'poemap'

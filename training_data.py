@@ -132,7 +132,7 @@ def clean_sparse_pixels(image, threshold=3, neighborhood_size=8):
 def pad_with_origin(minimap, origin, pad_multiple):
   # pad image, use mask to track origin position
   mask = np.zeros((*minimap.shape[0:2], 1))
-  mask[origin] = 1
+  mask[*origin] = 1
   minimap = np.concatenate([minimap, mask], axis=-1)
   minimap = pad_to_square_multiple(minimap, pad_multiple)
   origin = np.where(minimap[..., -1] == 1)
@@ -140,12 +140,12 @@ def pad_with_origin(minimap, origin, pad_multiple):
   minimap = minimap[:,:,0:-1].astype(np.uint8)
   return minimap, origin
 
-def extract_map_features(minimap, origin, model):
+def extract_map_features(minimap, origin, model, threshold, neighborhood_size):
   minimap, origin = pad_with_origin(minimap, origin, 32)
   pred = model.batch_inference(minimap, chunk_size=32)
-  pred = clean_sparse_pixels(pred, threshold=20, neighborhood_size=40)
-  pred, offsets = crop_to_content(pred)
-  origin = tuple(int(val - offset) for val, offset in zip(origin, offsets))
+  pred = clean_sparse_pixels(pred, threshold=threshold, neighborhood_size=neighborhood_size)
+  #pred, offsets = crop_to_content(pred)
+  #origin = tuple(int(val - offset) for val, offset in zip(origin, offsets))
   return pred, origin
 
 # Chunk the map into square patches, label each patch with y,x positions relative to origin
@@ -182,6 +182,28 @@ def get_tokens(patches):
       if np.any(patch[:,:,0] > 0):
         tokens.append(patch)
   return np.array(tokens)
+
+# sort tokens in ascending order by euclidean distance from origin
+def distance_sort(tokens):
+  x = tokens[..., -2]
+  y = tokens[..., -1]
+  x2_y2 = x**2 + y**2
+  x2_y2 = x2_y2[..., np.newaxis]
+  tokens = np.concatenate((tokens, x2_y2), axis=-1)
+  tokens = tokens[np.argsort(x2_y2[:,0,0,0])]
+  # tokens now has new element at end of last axis: euclidean distance from origin
+  return tokens
+
+def tokenize_minimap(minimap: np.ndarray, origin: np.ndarray, model):
+  # minimap: color image of shape (vertical, horizontal, 3)
+  assert len(minimap.shape) == 3 and minimap.shape[2] == 3 and minimap.dtype == np.uint8
+  # origin: y,x coordinates of layout entrance, y is pixels down from image top, x is pixels right from image left
+  assert origin.shape == (2,) and origin.dtype == np.uint32
+  minimap, origin = extract_map_features(minimap, origin, model, threshold=10, neighborhood_size=15)
+  patches = get_patches(minimap, origin)
+  tokens = get_tokens(patches)
+  tokens = distance_sort(tokens)
+  return tokens
 
 if __name__=="__main__":
 

@@ -6,34 +6,77 @@ import numpy as np
 from PIL import Image
 from helpers import shrink_with_origin, pad_to_square_multiple
 from models import AttentionUNet
-from typing import DefaultDict, List
+from typing import DefaultDict, List, Dict
 from scipy.ndimage import convolve
 
 class ViTDataLoader:
-  def __init__(self, data_dir, test_samples_per_class=1, batch_size=64):
-    self.data_dir, self.batch_size = data_dir, batch_size
+  def __init__(self, data_dir, test_samples_per_class=0):
+    self.data_dir, self.test_samples_per_class = data_dir, test_samples_per_class
 
-    self.class_to_paths = defaultdict(set)
+    self.class_to_paths = defaultdict(list)
     patches = set(glob.glob(os.path.join(data_dir, "*", "*", "*.npz")))
     origins = set(glob.glob(os.path.join(data_dir, "*", "*", "*_origin.npz")))
-    patches = patches - origins
+    patches = sorted(list(patches - origins))
     for fp in patches:
-      self.class_to_paths[self.fp_to_class(fp)].add(fp)
+      self.class_to_paths[self.fp_to_class(fp)].append(fp)
 
-    self.train_test_split(test_samples_per_class)
-    self.shuffle_training_data()
+    self.train_test_split()
+    #self.shuffle_training_data()
 
   def fp_to_class(self, fp):
     return int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
 
-  def train_test_split(self, test_samples_per_class):
-    # todo: for validation, don't use minimaps that only capture layout origin, which are unlikely to be predictive
-    self.train_data = copy.deepcopy(self.class_to_paths)
-    self.test_data = defaultdict(set)
+  def get_training_data(self, max_patches=128, samples_per_class=7):
+    X, Y = [], []
+    #num_classes = len(self.class_to_paths)
+    for cid in self.train_data:
+      for _ in range(samples_per_class):
+        layout = random.choice(self.train_data[cid])
+        X.append(self.sample_layout(layout))
+        Y.append(cid)
+    return X, Y
+
+  def sample_layout(self, tokens:np.ndarray, max_patches=128):
+    # Decide how many tokens have been seen
+    # Skew heavily toward smaller numbers to focus training on sample size useful to the player
+    # Because the player wants to know the layout ASAP after entering, with minimal tokens
+    min_samples = 8
+    num_samples = min_samples + np.random.beta(1.3, 1.3 * 3, size=1) * (max_patches - min_samples)
+    num_samples = np.round(num_samples).astype(np.uint32)
+
+    # Filter tokens that are too far from origin to be traveled to within a limited number of tokens seen
+    filtered = tokens[tokens[:, -1, -1, -1] <= num_samples**2]
+    """
+  From the filtered set of tokens we could theoretically have traveled to,
+randomly sample tokens, skewed toward being close to the origin (entrance)
+  If we traveled in a straight line from origin and encountered map features at the end, then we'll allow those 
+farthest seen map features to be sampled only if we get the max value from this beta distribution.
+  If we sample the min value from this beta dist., then we sample the num_samples closest tokens to the origin.
+  We use below alpha/beta params to simulate typical exploration, which is rarely a perfect straight line from origin.
+"""
+    diff_samples = (filtered.shape[0] - num_samples) * np.random.beta(2, 2 * 3, size=1)
+    sample_pools = num_samples + diff_samples
+    sample_pools = np.round(sample_pools).astype(np.uint32)
+    max_token_idx = sample_pools[0]
+    # Sample randomly within the window defined above
+    sel = np.random.choice(max_token_idx, size=num_samples, replace=False)
+    # remove euclidean distance
+    return tokens[sel][:,:,:,0:-1]
+
+  def train_test_split(self):
+    self.train_fps = copy.deepcopy(self.class_to_paths)
+    self.test_fps = defaultdict(list)
     for layout in self.class_to_paths:
-      for _ in range(test_samples_per_class):
-        if self.train_data[layout]:
-          self.test_data[layout].add(self.train_data[layout].pop())
+      for _ in range(self.test_samples_per_class):
+        if self.train_fps[layout]:
+          idx = random.randint(0, len(self.train_fps[layout]))
+          self.test_fps[layout].append(self.train_fps[layout].pop(idx))
+
+    self.train_data = self._load_layouts(self.train_fps)
+    self.test_data = self._load_layouts(self.test_fps)
+
+  def _load_layouts(self, fp_dict: Dict[int, List]):
+    return {k: [np.load(fp)['data'] for fp in v] for k,v in fp_dict.items()}
 
   def shuffle_training_data(self):
     # we are being lazy and tracking filepaths, will load data into memory later
@@ -53,7 +96,7 @@ class ViTDataLoader:
             patches_fp = shuffled[layout].pop()
             self.training_batches[-1].append(patches_fp)
 
-  def get_training_data(self, max_patches):
+  def get_training_data2(self, max_patches):
     for batch in self.training_batches:
       X = [np.load(fp)['data'][0] for fp in batch]
       # randomize patch order, it shouldn't matter because we calc position embeddings based on attached coords
@@ -65,16 +108,6 @@ class ViTDataLoader:
       Y = [self.fp_to_class(fp) for fp in batch]
       yield X, Y
 
-def find_unprocessed_frames(data_dir: str) -> DefaultDict[str, set]:
-  not_done = defaultdict(set)
-  for root, dirs, files in os.walk(data_dir):
-    for file in files:
-      prefix, ext = os.path.splitext(file)
-      if ext == ".png" and prefix[-1] != 'o' and f"{prefix}.npz" not in files:
-        #not_done[root].add(os.path.join(root, file))
-        not_done[root].add(file)
-  return not_done
-  
 get_frame_id = lambda x: int(os.path.splitext(x)[0])
 
 # extract middle of 4k frame
@@ -198,5 +231,9 @@ def tokenize_minimap(minimap: np.ndarray, origin: np.ndarray, model):
 
 if __name__=="__main__":
 
-  model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
-  prepare_training_data("data/train", model)
+  #model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
+  #prepare_training_data("data/train", model)
+  dl = ViTDataLoader("data/train")
+  X, Y = dl.get_training_data()
+
+  done = 1

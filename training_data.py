@@ -26,22 +26,22 @@ class ViTDataLoader:
   def fp_to_class(self, fp):
     return int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
 
-  def get_training_data(self, max_patches=128, samples_per_class=7):
+  def get_training_data(self, max_tokens=128, samples_per_class=7):
     X, Y = [], []
     #num_classes = len(self.class_to_paths)
     for cid in self.train_data:
       for _ in range(samples_per_class):
         layout = random.choice(self.train_data[cid])
-        X.append(self.sample_layout(layout))
+        X.append(self.sample_layout(layout, max_tokens=max_tokens))
         Y.append(cid)
     return X, Y
 
-  def sample_layout(self, tokens:np.ndarray, max_patches=128):
+  def sample_layout(self, tokens:np.ndarray, max_tokens=128):
     # Decide how many tokens have been seen
     # Skew heavily toward smaller numbers to focus training on sample size useful to the player
     # Because the player wants to know the layout ASAP after entering, with minimal tokens
     min_samples = 8
-    num_samples = min_samples + np.random.beta(1.3, 1.3 * 3, size=1) * (max_patches - min_samples)
+    num_samples = min_samples + np.random.beta(1.3, 1.3 * 3, size=1) * (max_tokens - min_samples)
     num_samples = np.round(num_samples).astype(np.uint32)
 
     # Filter tokens that are too far from origin to be traveled to within a limited number of tokens seen
@@ -229,11 +229,15 @@ def tokenize_minimap(minimap: np.ndarray, origin: np.ndarray, model):
   tokens = distance_sort(tokens)
   return tokens, minimap
 
+import time
 if __name__=="__main__":
 
   #model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
   #prepare_training_data("data/train", model)
   dl = ViTDataLoader("data/train")
-  X, Y = dl.get_training_data()
+  for _ in range(10):
+    t1 = time.perf_counter()
+    X, Y = dl.get_training_data()
+    print(f"elapsed: {(time.perf_counter() - t1):0.3f}")
 
   done = 1

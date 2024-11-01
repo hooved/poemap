@@ -7,7 +7,7 @@ from training_data import ViTDataLoader
 if __name__=="__main__":
   dl = ViTDataLoader(data_dir="data/train")
 
-  model_name = "ViT2"
+  model_name = "ViT3"
   model = ViT(model_name, 9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
   #tokens = np.load("data/train/1/0/0.npz")['data']
   optim = nn.optim.Adam(nn.state.get_parameters(model))
@@ -19,15 +19,25 @@ if __name__=="__main__":
     #pred = pred.argmax(axis=1).cast(dtypes.uint8).numpy()
     loss = model(X).cross_entropy(Tensor(Y)).backward()
     optim.step()
-    return loss
+    return loss.realize()
   jit_step = TinyJit(step)
 
-  num_epochs = 200
-  for epoch in range(num_epochs):
-    for i, (X, Y) in enumerate(dl.get_training_data(model.max_tokens)):
-      loss = jit_step(X, Y)
-      print(f"epoch: {epoch:4d}, step: {i:4d}, loss: {loss.item():.2f}")
+  num_steps = 20000
 
-  safe_save(get_state_dict(model), f"data/model/{model_name}.safetensors")
+  try:
+    last_saved_loss = float("inf")
+    elapsed = 0
+    for step_id in range(num_steps):
+      #for i, (X, Y) in enumerate(dl.get_training_data(model.max_tokens)):
+      X, Y = dl.get_training_data(max_tokens=model.max_tokens)
+      loss = jit_step(X, Y).item()
+      elapsed += 1
+      if step_id % 5 == 0:
+        print(f"step: {step_id:5d}, loss: {loss:.7f}")
 
-  done = 1
+      if elapsed >= 200 and loss < last_saved_loss:
+        elapsed = 0
+        last_saved_loss = loss
+        safe_save(get_state_dict(model), f"data/model/{model.model_name}_{step_id}.safetensors")
+  finally:
+    safe_save(get_state_dict(model), f"data/model/{model_name}.safetensors")

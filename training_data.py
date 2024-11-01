@@ -83,28 +83,19 @@ def crop_frame(frame: np.ndarray, box_radius: int):
   return frame[1060-box_radius: 1060+box_radius, 1920-box_radius: 1920+box_radius, :]
 
 def prepare_training_data(data_dir, model):
-  todo = find_unprocessed_frames(data_dir)
-  for instance in todo:
-    # don't process unneeded frames past max_frame_id
-    max_frame_id = max(get_frame_id(f) for f in todo[instance])
-    frames = [(get_frame_id(f), f) for f in os.listdir(instance)]
-    # both frames and moves will be in chronological order due to sorting
-    frames = sorted([(fid, f) for fid, f in frames if fid <= max_frame_id])
-    frames = [(fid, crop_frame(np.array(Image.open(os.path.join(instance, f))), 600)) for fid, f in frames]
-    # calculating moves is expensive, so we do it upfront once for all frames, then slice thereafter
-    moves = get_moves([f for fid, f in frames])
-    for target_frame in todo[instance]:
-      tf_id = get_frame_id(target_frame)
-      tf_idx = next((i for i, tpl in enumerate(frames) if tpl[0]==tf_id), -1)
-      frames_subset = np.array([f for fid, f in frames][0:tf_idx + 1])
-      minimap, origin = draw_minimap(frames_subset, moves[0:tf_idx + 1])
-      minimap, origin = shrink_with_origin(minimap, origin)
-      minimap, origin = extract_map_features(minimap, origin, model)
-      o_id = get_frame_id(target_frame)
-      Image.fromarray(minimap * 255, mode="L").save(os.path.join(instance, f"{o_id}o.png"))
-      minimap = get_patches(minimap, origin)
-      minimap = get_tokens(minimap)
-      np.savez_compressed(os.path.join(instance, f"{o_id}.npz"), data=minimap)
+  # compute tokens for complete layouts
+  pngs = set(glob.glob(os.path.join(data_dir, "*", "*", "*.png")))
+  masks = set(glob.glob(os.path.join(data_dir, "*", "*", "*_mask.png")))
+  layouts = sorted(list(pngs - masks))
+  for layout in layouts:
+    minimap = np.array(Image.open(layout))
+    wd = os.path.dirname(layout)
+    num = os.path.splitext(os.path.basename(layout))[0]
+    origin = np.load(os.path.join(wd, f"{num}_origin.npz"))['data']
+    tokens, mask = tokenize_minimap(minimap, origin, model)
+    # save mask of map features for visualization
+    Image.fromarray(mask * 255, mode="L").save(os.path.join(wd, f"{num}_mask.png"))
+    np.savez_compressed(os.path.join(wd, f"{num}.npz"), data=tokens)
 
 def crop_to_content(image):
   white_pixels = np.argwhere(image == 1)
@@ -203,10 +194,9 @@ def tokenize_minimap(minimap: np.ndarray, origin: np.ndarray, model):
   patches = get_patches(minimap, origin)
   tokens = get_tokens(patches)
   tokens = distance_sort(tokens)
-  return tokens
+  return tokens, minimap
 
 if __name__=="__main__":
 
-  model = AttentionUNet("AttentionUNet_4")
-  model.load()
+  model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
   prepare_training_data("data/train", model)

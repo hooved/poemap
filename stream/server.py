@@ -7,6 +7,7 @@ from tinygrad.nn.state import safe_load, load_state_dict
 from tinygrad import dtypes, Tensor, TinyJit
 from training_data import extract_map_features, get_patches, get_tokens, tokenize_minimap
 from functools import partial
+import time
 
 async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, models: dict):
   print("connection opened")
@@ -18,6 +19,7 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
     if header == ClientHeader.PROCESS_MINIMAP:
       try:
         minimap = await receive_array(reader, dtype=np.uint8)
+        t1 = time.perf_counter()
         origin = await receive_array(reader, dtype=np.uint32)
         tokens, mask = tokenize_minimap(minimap, origin, models["UNet"])
         # if mask is blank, will get error later on in ViT
@@ -34,6 +36,7 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
           layout_id = models["ViT"]([tokens])[0].argmax().cast(dtypes.uint8).item()
           writer.write(layout_id.to_bytes(4, byteorder="big"))
           await writer.drain()
+          print(f"total elapsed: {(time.perf_counter() - t1):0.3f}")
         else:
           error_val = 9999
           writer.write(error_val.to_bytes(4, byteorder="big"))

@@ -4,6 +4,7 @@ from tinygrad.dtype import dtypes
 from tinygrad.nn.state import safe_load, safe_save, get_state_dict, load_state_dict
 import numpy as np
 from dataloader import DataLoader
+import time
 
 """
 Adapted from:
@@ -111,10 +112,17 @@ class UNet:
     for i in range(0, chunks.shape[0], batch_size):
       model_input = Tensor(chunks[i:i + batch_size])
       # TinyJit throws exception when the tensor shape changes
+      t1 = time.perf_counter()
       if i + batch_size <= chunks.shape[0]:
         model_output = self.jit_inference(self, model_input).numpy()
       else:
-        model_output = run(self, model_input).numpy()
+        # this step takes a really long time unless we pad to the jitted shape
+        pad = Tensor.zeros((batch_size - (chunks.shape[0] - i),3,32,32))
+        model_input = model_input.cat(pad, dim=0)
+        assert model_input.shape[0] == batch_size
+        model_output = self.jit_inference(self, model_input)[0:64-pad.shape[0]].numpy()
+        assert model_output.shape[0] == chunks.shape[0] - i
+      print(f"inference time: {(time.perf_counter() - t1):0.3f}")
       result = np.concatenate((result, model_output), axis=0)
 
     result = self.dl.synthesize_image_from_chunks(result, (*original_shape[0:2], 1)).squeeze(-1)

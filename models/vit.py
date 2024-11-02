@@ -26,14 +26,7 @@ class ViT:
     self.jit_inference = None
     self.jit_shape = None
 
-  def run(self, x: Tensor):
-    class_tokens = self.cls_token.add(Tensor.zeros(x.shape[0],1,1))
-    x = class_tokens.cat(x, dim=1).sequential(self.tbs)
-    x = x.layernorm().linear(*self.encoder_norm)
-    x = x[:, 0].linear(*self.head)
-    return x.realize()
-
-  def __call__(self, x: List[np.ndarray]) -> Tensor:
+  def prep_tokens(self, x: List[np.ndarray]) -> Tensor:
     # need to use np arrays because tinygrad throws errors on noncontiguous assignments during pos embed calcs
     #class_tokens = self.cls_token.add(Tensor.zeros(len(x),1,1))
 
@@ -54,11 +47,29 @@ class ViT:
         # TODO: should we randomly sample instead of using tokens closest to origin?
         x[i] = layout[0:self.max_tokens]
 
-    x = Tensor.stack(*x)
+    return Tensor.stack(*x)
+
+  def run(self, x: Tensor):
+    class_tokens = self.cls_token.add(Tensor.zeros(x.shape[0],1,1))
+    x = class_tokens.cat(x, dim=1).sequential(self.tbs)
+    x = x.layernorm().linear(*self.encoder_norm)
+    x = x[:, 0].linear(*self.head)
+    return x
+    #return x.realize()
+
+  @TinyJit
+  def jit_run(self, x: Tensor):
+    return self.run(x).realize()
+
+  def __call__(self, x: List[np.ndarray]) -> Tensor:
+    x = self.prep_tokens(x)
+    return self.run(x)
+
+  def jit_infer(self, x):
+    x = self.prep_tokens(x)
     if self.jit_shape != x.shape:
       self.jit_shape = x.shape
-      self.jit_inference = TinyJit(self.run)
-
+      self.jit_inference = self.jit_run
     return self.jit_inference(x)
 
   def load(self):

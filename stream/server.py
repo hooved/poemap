@@ -68,7 +68,7 @@ async def run_server(hostname, port: int):
   }
   warmup = models["UNet"].batch_inference(np.random.randint(0, 256, size=(32*10, 32*10, 3), dtype=np.uint8), chunk_size=32)
   print(f"UNet warmup.shape: {warmup.shape}")
-  warmup = models["ViT"]([np.random.randint(0, 2, size=(64,32,32,3), dtype=np.int64)])
+  warmup = models["ViT"].jit_infer([np.random.randint(0, 2, size=(64,32,32,3), dtype=np.int64)])
   warmup = warmup.argmax(axis=1).cast(dtypes.uint8).numpy()[0]
   print(f"ViT warmup: {warmup}")
 

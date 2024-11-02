@@ -8,6 +8,7 @@ from helpers import shrink_with_origin, pad_to_square_multiple
 from models import AttentionUNet
 from typing import DefaultDict, List, Dict
 from scipy.ndimage import convolve
+import time
 
 class ViTDataLoader:
   def __init__(self, data_dir, test_samples_per_class=0):
@@ -229,7 +230,6 @@ def tokenize_minimap(minimap: np.ndarray, origin: np.ndarray, model):
   tokens = distance_sort(tokens)
   return tokens, minimap
 
-import time
 if __name__=="__main__":
 
   #model = AttentionUNet("AttentionUNet8_8600", depth=3).load()

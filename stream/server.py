@@ -19,7 +19,6 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
     if header == ClientHeader.PROCESS_MINIMAP:
       try:
         minimap = await receive_array(reader, dtype=np.uint8)
-        t1 = time.perf_counter()
         origin = await receive_array(reader, dtype=np.uint32)
         tokens, mask = tokenize_minimap(minimap, origin, models["UNet"])
         # if mask is blank, will get error later on in ViT
@@ -36,7 +35,6 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
           layout_id = models["ViT"]([tokens])[0].argmax().cast(dtypes.uint8).item()
           writer.write(layout_id.to_bytes(4, byteorder="big"))
           await writer.drain()
-          print(f"total elapsed: {(time.perf_counter() - t1):0.3f}")
         else:
           error_val = 9999
           writer.write(error_val.to_bytes(4, byteorder="big"))
@@ -65,8 +63,8 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
 async def run_server(hostname, port: int):
   models = {
     "UNet": AttentionUNet("AttentionUNet8_8600", depth=3).load(),
-    #"ViT": ViT("ViT3_2399", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
-    "ViT": ViT("ViT3_799", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
+    "ViT": ViT("ViT3_2399", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
+    #"ViT": ViT("ViT3_799", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
   }
   warmup = models["UNet"].batch_inference(np.random.randint(0, 256, size=(32*10, 32*10, 3), dtype=np.uint8), chunk_size=32)
   print(f"UNet warmup.shape: {warmup.shape}")

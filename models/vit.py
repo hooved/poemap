@@ -2,7 +2,7 @@
 # https://github.com/tinygrad/tinygrad/blob/master/extra/models/vit.py and transformer.py
 # https://github.com/kweimann/poe-learning-layouts/blob/main/model.py
 
-from tinygrad import Tensor, dtypes
+from tinygrad import Tensor, dtypes, TinyJit
 from tinygrad.nn import Conv2d, Linear
 from tinygrad.nn.state import safe_load, load_state_dict
 import numpy as np
@@ -23,10 +23,19 @@ class ViT:
       for i in range(layers)]
     self.encoder_norm = (Tensor.scaled_uniform(embed_dim), Tensor.zeros(embed_dim))
     self.head = (Tensor.scaled_uniform(embed_dim, num_classes), Tensor.zeros(num_classes))
+    self.jit_inference = None
+    self.jit_shape = None
+
+  def run(self, x: Tensor):
+    class_tokens = self.cls_token.add(Tensor.zeros(x.shape[0],1,1))
+    x = class_tokens.cat(x, dim=1).sequential(self.tbs)
+    x = x.layernorm().linear(*self.encoder_norm)
+    x = x[:, 0].linear(*self.head)
+    return x.realize()
 
   def __call__(self, x: List[np.ndarray]) -> Tensor:
     # need to use np arrays because tinygrad throws errors on noncontiguous assignments during pos embed calcs
-    class_tokens = self.cls_token.add(Tensor.zeros(len(x),1,1))
+    #class_tokens = self.cls_token.add(Tensor.zeros(len(x),1,1))
 
     # pad each tensor in x with mask tokens, then batch together
     # todo: batch layouts with same # non-mask tokens? lots of uneven batches grouped together here
@@ -39,11 +48,18 @@ class ViT:
         mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))
         x[i] = layout.cat(mask_tokens, dim=0)
       else:
-        x[i] = layout
+        # Use closest tokens to origin, which more represent training data
+        # Current assumption is that these tokens are ordered by euclidean distance from origin,
+        #  based on implementation of training_data.tokenize_minimap (with distance_sort at end)
+        # TODO: should we randomly sample instead of using tokens closest to origin?
+        x[i] = layout[0:self.max_tokens]
+
     x = Tensor.stack(*x)
-    x = class_tokens.cat(x, dim=1).sequential(self.tbs)
-    x = x.layernorm().linear(*self.encoder_norm)
-    return x[:, 0].linear(*self.head)
+    if self.jit_shape != x.shape:
+      self.jit_shape = x.shape
+      self.jit_inference = TinyJit(self.run)
+
+    return self.jit_inference(x)
 
   def load(self):
     state_dict = safe_load(f"data/model/{self.model_name}.safetensors")

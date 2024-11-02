@@ -46,6 +46,7 @@ class ResBlock():
 class UNet:
   def __init__(self, model_name, in_chan=3, mid_chan=64, out_chan=2, depth=2, width=1):
     self.model_name = model_name
+    self.jit_inference = None
     self.dl = DataLoader(
       #image_dir="data/auto_crop",
       #mask_dir="data/mask",
@@ -102,17 +103,18 @@ class UNet:
     chunks = self.dl.get_model_input_chunks(whole, chunk_size=chunk_size)
     def run(self, x):
       Tensor.training = False
-      return self.__call__(x).argmax(axis=1, keepdim=True).cast(dtypes.uint8).permute(0,2,3,1).numpy()
-    jit_run = TinyJit(run)
+      return self.__call__(x).argmax(axis=1, keepdim=True).cast(dtypes.uint8).permute(0,2,3,1).realize()
+    if not self.jit_inference:
+      self.jit_inference = TinyJit(run)
     # Inference on the whole image takes too much GPU memory, so we run inference on subsets
     result = np.empty((0, chunk_size, chunk_size, 1), dtype=np.uint8)
     for i in range(0, chunks.shape[0], batch_size):
       model_input = Tensor(chunks[i:i + batch_size])
       # TinyJit throws exception when the tensor shape changes
       if i + batch_size <= chunks.shape[0]:
-        model_output = jit_run(self, model_input)
+        model_output = self.jit_inference(self, model_input).numpy()
       else:
-        model_output = run(self, model_input)
+        model_output = run(self, model_input).numpy()
       result = np.concatenate((result, model_output), axis=0)
 
     result = self.dl.synthesize_image_from_chunks(result, (*original_shape[0:2], 1)).squeeze(-1)

@@ -3,10 +3,11 @@
 # https://github.com/kweimann/poe-learning-layouts/blob/main/model.py
 
 from tinygrad import Tensor, dtypes, TinyJit
-from tinygrad.nn import Conv2d, Linear
+from tinygrad.nn import Conv2d, Linear, GroupNorm
 from tinygrad.nn.state import safe_load, load_state_dict
 import numpy as np
 from typing import List
+from models.UNet import ResBlock
 
 # adapted from tinygrad ViT code
 class ViT:
@@ -80,10 +81,16 @@ class ViT:
 class PatchEmbed:
   def __init__(self):
     self.l1 = Conv2d(1, 64, kernel_size=(16,16), stride=16)
+    self.units = [
+      Conv2d(1, 64, kernel_size=3, padding=1), ResBlock(64, 64),
+      GroupNorm(64//16, 64), Tensor.relu, 
+      Conv2d(64, 1, kernel_size=3, padding=1), Tensor.relu,
+    ]
 
   def __call__(self, x:Tensor) -> Tensor:
     # 1 * 32 * 32 --> 256
     return self.l1(x).relu().flatten(1).dropout(0.3)
+    #return x.sequential(self.units).flatten(1).dropout(0.3)
 
 # frequencies (denoms) based on poe-learning-layouts 1d positions embeds for time
 # Here we are trying to embed the 2d position of the patch relative to the map entrance

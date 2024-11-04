@@ -66,10 +66,14 @@ class ViT:
 
   def __call__(self, x: List[np.ndarray]) -> Tensor:
     x = self.prep_tokens(x)
+    if not Tensor.training:
+      x.requires_grad = False
     return self.run(x)
 
   def jit_infer(self, x):
     x = self.prep_tokens(x)
+    if not Tensor.training:
+      x.requires_grad = False
     if self.jit_shape != x.shape:
       self.jit_shape = x.shape
       self.jit_inference = self.jit_run
@@ -94,7 +98,8 @@ class PatchEmbed:
     #self.l1 = Conv2d(1, 64, kernel_size=(16,16), stride=16)
     self.units = [
       Conv2d(1, 64, kernel_size=3, padding=1), 
-      ResBlock(64, 64), ResBlock(64, 256),
+      #ResBlock(64, 64), ResBlock(64, 256),
+      ResBlock(64, 256),
       GroupNorm(256//16, 256), Tensor.relu, GlobalAvgPool2d(),
       #Conv2d(64, 1, kernel_size=3, padding=1), Tensor.relu,
     ]

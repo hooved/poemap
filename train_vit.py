@@ -5,7 +5,7 @@ from tinygrad.nn.state import safe_load, safe_save, get_state_dict, load_state_d
 from training_data import ViTDataLoader
 
 if __name__=="__main__":
-  dl = ViTDataLoader(data_dir="data/train")
+  dl = ViTDataLoader(data_dir="data/train", test_samples_per_class=1)
 
   model_name = "ViT5"
   #model = ViT(model_name, 9, max_tokens=128, layers=3, embed_dim=1024, num_heads=4)
@@ -23,25 +23,36 @@ if __name__=="__main__":
     return loss.realize()
   jit_step = TinyJit(step)
 
-  num_steps = 20000
+  def eval_step(X, Y):
+    Tensor.training = False
+    #acc = model(X).numpy()
+    acc = (model(X).argmax(axis=1) == Tensor(Y, requires_grad=False)).mean()
+    #acc = (model(X).numpy().argmax(axis=1) == np.array(Y)).mean()
+    return acc.realize()
+  jit_eval = TinyJit(eval_step)
 
+  num_steps = 20000
   try:
     last_saved_loss = float("inf")
     elapsed = 0
     for step_id in range(num_steps):
       #for i, (X, Y) in enumerate(dl.get_training_data(model.max_tokens)):
-      #X, Y = dl.get_training_data(max_tokens=model.max_tokens)
+      X, Y = dl.get_data(dtype="train", max_tokens=model.max_tokens, samples_per_class=1)
 
       # For fast testing
-      if step_id >= 20:
+      """
+      if step_id >= 21:
         break
       X = [np.random.randint(0, 2, size=(8,32,32,3), dtype=np.int64)]
       Y = [1]
+      """
 
       loss = jit_step(X, Y).item()
       elapsed += 1
-      if step_id % 5 == 0:
-        print(f"step: {step_id:5d}, loss: {loss:.7f}")
+      if step_id % 10 == 0:
+        X, Y = dl.get_data(dtype="test", max_tokens=model.max_tokens, samples_per_class=1)
+        acc = jit_eval(X, Y).item()
+        print(f"step: {step_id:5d}, loss: {loss:.7f}, acc: {acc:0.5f}")
 
       if elapsed >= 200 and loss < last_saved_loss:
         elapsed = 0

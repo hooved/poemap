@@ -27,12 +27,16 @@ class ViTDataLoader:
   def fp_to_class(self, fp):
     return int(Path(fp).relative_to(Path(self.data_dir)).parts[0])
 
-  def get_training_data(self, max_tokens=128, samples_per_class=7):
+  def get_data(self, dtype="train", max_tokens=128, samples_per_class=7):
+    data = {"train": self.train_data, "test": self.test_data}
+    assert dtype in data, f"Invalid dtype '{dtype}', must be 'train' or 'test'."
+    data = data[dtype]
+
     X, Y = [], []
     #num_classes = len(self.class_to_paths)
-    for cid in self.train_data:
+    for cid in data:
       for _ in range(samples_per_class):
-        layout = random.choice(self.train_data[cid])
+        layout = random.choice(data[cid])
         X.append(self.sample_layout(layout, max_tokens=max_tokens))
         Y.append(cid)
     return X, Y
@@ -55,7 +59,8 @@ farthest seen map features to be sampled only if we get the max value from this 
   If we sample the min value from this beta dist., then we sample the num_samples closest tokens to the origin.
   We use below alpha/beta params to simulate typical exploration, which is rarely a perfect straight line from origin.
 """
-    diff_samples = (filtered.shape[0] - num_samples) * np.random.beta(2, 2 * 3, size=1)
+    #diff_samples = (filtered.shape[0] - num_samples) * np.random.beta(2, 2 * 3, size=1)
+    diff_samples = (filtered.shape[0] - num_samples) * 1.0
     sample_pools = num_samples + diff_samples
     sample_pools = np.round(sample_pools).astype(np.uint32)
     max_token_idx = sample_pools[0]
@@ -70,7 +75,7 @@ farthest seen map features to be sampled only if we get the max value from this 
     for layout in self.class_to_paths:
       for _ in range(self.test_samples_per_class):
         if self.train_fps[layout]:
-          idx = random.randint(0, len(self.train_fps[layout]))
+          idx = random.randint(0, len(self.train_fps[layout]) - 1)
           self.test_fps[layout].append(self.train_fps[layout].pop(idx))
 
     self.train_data = self._load_layouts(self.train_fps)

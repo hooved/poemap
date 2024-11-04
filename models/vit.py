@@ -80,19 +80,30 @@ class ViT:
     load_state_dict(self, state_dict)
     return self
 
+class GlobalAvgPool2d:
+  def __init__(self):
+    pass
+
+  def __call__(self, x:Tensor) -> Tensor:
+    # N, C, H, W  ->  N, C
+    x = x.reshape(*x.shape[0:2], x.shape[2] * x.shape[3]) # N, C, H*W
+    return x.mean(axis=-1)
+
 class PatchEmbed:
   def __init__(self):
-    self.l1 = Conv2d(1, 64, kernel_size=(16,16), stride=16)
-    #self.units = [
-      #Conv2d(1, 64, kernel_size=3, padding=1), ResBlock(64, 64),
-      #GroupNorm(64//16, 64), Tensor.relu, 
+    #self.l1 = Conv2d(1, 64, kernel_size=(16,16), stride=16)
+    self.units = [
+      Conv2d(1, 64, kernel_size=3, padding=1), 
+      ResBlock(64, 64), ResBlock(64, 256),
+      GroupNorm(256//16, 256), Tensor.relu, GlobalAvgPool2d(),
       #Conv2d(64, 1, kernel_size=3, padding=1), Tensor.relu,
-    #]
+    ]
 
   def __call__(self, x:Tensor) -> Tensor:
     # 1 * 32 * 32 --> 256
-    return self.l1(x).relu().flatten(1).dropout(0.3)
-    #return x.sequential(self.units).flatten(1).dropout(0.3)
+    #return self.l1(x).relu().flatten(1).dropout(0.3)
+
+    return x.sequential(self.units).dropout(0.3)
 
 # frequencies (denoms) based on poe-learning-layouts 1d positions embeds for time
 # Here we are trying to embed the 2d position of the patch relative to the map entrance

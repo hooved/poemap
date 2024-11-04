@@ -36,7 +36,9 @@ class ViT:
     for i, layout in enumerate(x):
       pe = Tensor(get_2d_pos_embed(layout, self.embed_dim), requires_grad=False)
       # Throw out last two elements of last axis, which contained x,y-coord data
-      layout = Tensor(layout[:,:,:,0], requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+      # Now layout is only zeroes and ones
+      layout = layout[:,:,:,0].astype(np.bool)
+      layout = Tensor(layout, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
       layout = self.embedding(layout).add(pe)
       if layout.shape[0] < self.max_tokens:
         mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))
@@ -81,11 +83,11 @@ class ViT:
 class PatchEmbed:
   def __init__(self):
     self.l1 = Conv2d(1, 64, kernel_size=(16,16), stride=16)
-    self.units = [
-      Conv2d(1, 64, kernel_size=3, padding=1), ResBlock(64, 64),
-      GroupNorm(64//16, 64), Tensor.relu, 
-      Conv2d(64, 1, kernel_size=3, padding=1), Tensor.relu,
-    ]
+    #self.units = [
+      #Conv2d(1, 64, kernel_size=3, padding=1), ResBlock(64, 64),
+      #GroupNorm(64//16, 64), Tensor.relu, 
+      #Conv2d(64, 1, kernel_size=3, padding=1), Tensor.relu,
+    #]
 
   def __call__(self, x:Tensor) -> Tensor:
     # 1 * 32 * 32 --> 256
@@ -96,7 +98,6 @@ class PatchEmbed:
 # Here we are trying to embed the 2d position of the patch relative to the map entrance
 # We want to encode any possible (x,y) position where x and y are any integer
 def get_2d_pos_embed(tokens, dim):
-  dim = 256
   assert dim % 4 == 0
   num_tokens = tokens.shape[0]
   x_coords = tokens[:,0,0,1].reshape(tokens.shape[0], 1)
@@ -107,7 +108,8 @@ def get_2d_pos_embed(tokens, dim):
   embeds[:, 1::4] = np.cos(x_coords * denoms) 
   embeds[:, 2::4] = np.sin(y_coords * denoms) 
   embeds[:, 3::4] = np.cos(y_coords * denoms) 
-  return embeds
+  # at this point, dtype is float64
+  return embeds.astype(np.float32)
 
 # copy paste from tinygrad/extra/models/transformer.py
 class TransformerBlock:

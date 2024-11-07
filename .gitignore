@@ -7,3 +7,4 @@ __pycache__/
 stream/venv_client
 debug*
 wandb/
+clips/

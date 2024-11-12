@@ -1,3 +1,20 @@
+# This script saves the line drawn on an MSPaint canvas
+# Each line represents a path through a layout
+# Later we will automatically sample only the parts of the image 
+  # near the line (representing light radius around player's path in game),
+  # and we will use these samplings to train the layout classifier,
+  # representing realistic samplings a player would take at test time
+
+# First make "draw" dir in poemap folder, 
+## for each layout to be sampled:
+  # copy PNG for layout to be sampled to poemap/draw/layout.png,
+  ## for each path you want to sample:
+    # draw a pure yellow line (rgb = (0, 255, 255)) on the PNG in paint
+    # use the clip.ahk script to call this script
+    # (this script automates the saving of the line coordinates to poemap/draw/paths.npz)
+  # copy poemap/draw/paths.npz back to the original layout dir
+  # rm poemap/draw/* (to prepare for next layout to sample)
+
 from PIL import Image, ImageGrab
 import numpy as np
 import os

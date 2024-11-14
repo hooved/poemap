@@ -10,6 +10,38 @@ from typing import DefaultDict, List, Dict
 from scipy.ndimage import convolve
 import time
 
+"""
+New dataloader:
+
+load paths to layout (png) / paths (npz) pairs
+schedule epochs / steps, with class balance on each step
+each step specifies layout/path pairs which are subsets of the total
+for each batch (step):
+  for each layout/path pair in batch:
+    load layout.png -> layout, np.ndarray
+    load path.npz -> path, np.ndarray
+    # below step calls UNet model, then does numpy stuff on CPU; 
+    layout + path -> patches, np.ndarray
+    # TODO: refactor to only use on-GPU Tensor ops, chain UNet inference to ViT forward pass on GPU
+  zero_grad, ViT(patches), backward, step
+
+use multiprocessing to run training while preloading batches in parallel
+
+Data transformations:
+
+# batch of layout/path pairs
+[
+  (layout1, path1),
+  (layout2, path2),
+]
+
+# each layout/path pair gives a set of N 32x32 pixel patches, last axis has 0/1 at 0th element, y,x coords at 1st/2nd elements
+[(N_1,32,32,3), (N_2,32,32,3), ...]
+
+# each patch set of N patches is padded with mask token to 128 patches (or truncated if N > 128)
+Tensor(batch_size, 128,...)
+"""
+
 class ViTDataLoader:
   def __init__(self, data_dir, test_samples_per_class=0):
     self.data_dir, self.test_samples_per_class = data_dir, test_samples_per_class

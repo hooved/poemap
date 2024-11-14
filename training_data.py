@@ -13,29 +13,48 @@ import time
 """
 New dataloader:
 
-load paths to layout (png) / paths (npz) pairs
-schedule epochs / steps, with class balance on each step
-each step specifies layout/path pairs which are subsets of the total
-for each batch (step):
-  for each layout/path pair in batch:
-    load layout.png -> layout, np.ndarray
-    load path.npz -> path, np.ndarray
-    # below step calls UNet model, then does numpy stuff on CPU; 
-    layout + path -> patches, np.ndarray
-    # TODO: refactor to only use on-GPU Tensor ops, chain UNet inference to ViT forward pass on GPU
+# Prerequisite: convert layout.png to layout mask (mask.npz) by running this script, `python training_data.py`
+
+- load filepaths to layout mask (npz) / paths (npz) pairs
+- schedule epochs / steps, with class balance on each step
+- each step specifies mask/path pairs which are subsets of the total
+for each epoch:
+  for each batch (step):
+    for each mask/path pair in batch:
+      load mask.npz -> np.ndarray
+      load path.npz -> np.ndarray
+      mask + path + mask origin -> patches, np.ndarray
   zero_grad, ViT(patches), backward, step
 
 use multiprocessing to run training while preloading batches in parallel
 
-Data transformations:
+- Load all mask filepaths, and paths into memory (small footprint)
+--- load all mask origins: same as original image origins
+- For each epoch, schedule mask fp/path pairs into steps, randomly but with class balance
+- Only training process exists initially, and computes the schedule
+- Complete training schedule is computed before training and sent to separate process (loader process)
+- Loader process loads up to N steps of data in advance, which is ready immediately when needed by training process
 
-# batch of layout/path pairs
+############
+
+Data sketch:
+
+light_radius: real in game radius is an oval, height from center = 120 px, width from center = 140 px (4k resolution)
+Our masks are downsampled by 2x in each dimension from 4k, so that would be vertical_radius = 60, horizontal_radius = 70
+For simplicity, use circular light radius of 65 px when sampling mask with path
+
+mask np.ndarray; shape (y, x)
+mask_origin np.ndarray; shape (2,)
+paths Dict[path_id str, path np.ndarray] 
+path np.ndarray; shape (N_points, 2)
+
+# batch of mask/path pairs
 [
-  (layout1, path1),
-  (layout2, path2),
+  (mask1, path1),
+  (mask2, path2),
 ]
 
-# each layout/path pair gives a set of N 32x32 pixel patches, last axis has 0/1 at 0th element, y,x coords at 1st/2nd elements
+# each mask/path pair gives a set of N 32x32 pixel patches, last axis has 0/1 at 0th element, y,x coords at 1st/2nd elements
 [(N_1,32,32,3), (N_2,32,32,3), ...]
 
 # each patch set of N patches is padded with mask token to 128 patches (or truncated if N > 128)
@@ -43,6 +62,13 @@ Tensor(batch_size, 128,...)
 """
 
 class ViTDataLoader:
+  def __init__(self, data_dir):
+    self.data_dir = data_dir
+    # Compute masks ahead of time
+    layouts = set(glob.glob(os.path.join(data_dir, "*", "*", "*.npz"))) - set(glob.glob(os.path.join(data_dir, "*", "*", "*_mask.png"))) 
+
+
+class _old_ViTDataLoader:
   def __init__(self, data_dir, test_samples_per_class=0):
     self.data_dir, self.test_samples_per_class = data_dir, test_samples_per_class
 
@@ -197,10 +223,12 @@ def pad_with_origin(minimap, origin, pad_multiple):
   mask[*origin] = 1
   minimap = np.concatenate([minimap, mask], axis=-1)
   minimap = pad_to_square_multiple(minimap, pad_multiple)
-  origin = np.where(minimap[..., -1] == 1)
-  origin = tuple(int(x[0]) for x in origin)
+  padded_origin = np.where(minimap[..., -1] == 1)
+  padded_origin = tuple(int(x[0]) for x in padded_origin)
   minimap = minimap[:,:,0:-1].astype(np.uint8)
-  return minimap, origin
+  # origin shouldn't change in current implementation
+  assert tuple(int(x) for x in origin) == padded_origin
+  return minimap, padded_origin
 
 def extract_map_features(minimap, origin, model, threshold, neighborhood_size):
   minimap, origin = pad_with_origin(minimap, origin, 32)

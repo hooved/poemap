@@ -15,22 +15,24 @@
   # copy poemap/draw/paths.npz back to the original layout dir
   # rm poemap/draw/* (to prepare for next layout to sample)
 
-from PIL import Image, ImageGrab
+from PIL import ImageGrab
 import numpy as np
 import os
 
 clip = ImageGrab.grabclipboard()
 clip = np.array(clip)
-white_pixels = (clip == [255, 255, 255]).all(axis=-1)
-clip[white_pixels] = [0, 0, 0]
-#Image.fromarray(clip).save("test.png")
+yellow_pixels = (clip == [255, 255, 0]).all(axis=-1)
+yellow_pixels = np.argwhere(yellow_pixels)
 
-os.makedirs("clips", exist_ok=True)
-fp_list = os.listdir("clips")
-
-if not fp_list:
-  clip_id = 0
+paths_fp = os.path.join("draw", "paths.npz")
+if os.path.exists(paths_fp):
+  paths = list(np.load(paths_fp, allow_pickle=True)['paths'])
 else:
-  clip_id = max([int(os.path.splitext(fp)[0]) for fp in os.listdir("clips")]) + 1
+  paths = []
 
-np.savez_compressed(os.path.join("clips", f"{clip_id}.npz"), data=clip)
+paths.append(yellow_pixels)
+paths = np.array(paths, dtype=object)
+
+assert yellow_pixels.shape[0] > 0
+print(f"saving yellow_pixels with shape: {yellow_pixels.shape}")
+np.savez_compressed(paths_fp, paths=paths)

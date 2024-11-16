@@ -61,11 +61,52 @@ path np.ndarray; shape (N_points, 2)
 Tensor(batch_size, 128,...)
 """
 
+# mask-path pairs are the highest level data for training
+# each mask-path pair is converted to a token sequence for ViT forward pass
+class MaskPath:
+  def __init__(self, mask_fp: str, path: np.ndarray):
+    pass
+
+  def load(self):
+    pass
+
 class ViTDataLoader:
-  def __init__(self, data_dir):
+  def __init__(self, data_dir, test_layout_split:int=1):
     self.data_dir = data_dir
-    # Compute masks ahead of time
-    layouts = set(glob.glob(os.path.join(data_dir, "*", "*", "*.npz"))) - set(glob.glob(os.path.join(data_dir, "*", "*", "*_mask.png"))) 
+    # We are using precomputed masks
+    masks = set(glob.glob(os.path.join(data_dir, "*", "*", "*_mask.png"))) 
+    self.data = defaultdict(defaultdict(list))
+    self.test_layout_split = test_layout_split
+
+    for mask_fp in masks:
+      # layout_dir > instance_dir > mask
+      instance_dir = os.path.dirname(mask_fp)
+      layout_dir = os.path.dirname(instance_dir)
+      instance_id = int(os.path.relpath(instance_dir, layout_dir))
+      layout_id = int(os.path.relpath(layout_dir, data_dir))
+
+      paths_fp = os.path.join(os.path.dirname(mask_fp), "paths.npz")
+      if os.path.exists(paths_fp):
+        paths = list(np.load(paths_fp, allow_pickle=True)['paths'])
+        assert len(paths) > 0
+      else: continue
+
+      for path in paths:
+        assert len(path.shape) == 2
+        assert path.shape[1] == 2
+        self.data[layout_id][instance_id].append(path)
+
+    self.train_test_split()
+
+  # split along layout instance mask axis (which is a higher level than paths through a layout instance)
+  def train_test_split(self):
+    self.train_data = self.data.copy()
+    self.test_data = {}
+    for layout_id in self.train_data:
+      for _ in range(self.test_layout_split):
+        instance_id = random.choice(list(self.train_data[layout_id].keys()))
+        instance_data = self.train_data[layout_id].pop(instance_id)
+        self.test_data[layout_id][instance_id] = instance_data
 
 
 class _old_ViTDataLoader:

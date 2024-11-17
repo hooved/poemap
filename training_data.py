@@ -64,8 +64,8 @@ Tensor(batch_size, 128,...)
 # mask-path pairs are the highest level data for training
 # each mask-path pair is converted to a token sequence for ViT forward pass
 class MaskPath:
-  def __init__(self, mask_fp: str, path: np.ndarray):
-    pass
+  def __init__(self, mask: np.ndarray, origin: np.ndarray, path: np.ndarray):
+    self.mask, self.origin, self.path = mask, origin, path
 
   def load(self):
     pass
@@ -79,22 +79,32 @@ class ViTDataLoader:
     self.test_layout_split = test_layout_split
 
     for mask_fp in masks:
-      # layout_dir > instance_dir > mask
+      # organize data into hierarchy for balanced layout class sampling
+      # layout_dir > instance_dir > mask/origin/path
       instance_dir = os.path.dirname(mask_fp)
-      layout_dir = os.path.dirname(instance_dir)
-      instance_id = int(os.path.relpath(instance_dir, layout_dir))
-      layout_id = int(os.path.relpath(layout_dir, data_dir))
 
-      paths_fp = os.path.join(os.path.dirname(mask_fp), "paths.npz")
+      paths_fp = os.path.join(instance_dir, "paths.npz")
       if os.path.exists(paths_fp):
         paths = list(np.load(paths_fp, allow_pickle=True)['paths'])
         assert len(paths) > 0
       else: continue
 
+      layout_dir = os.path.dirname(instance_dir)
+      instance_id = int(os.path.relpath(instance_dir, layout_dir))
+      layout_id = int(os.path.relpath(layout_dir, data_dir))
+
+      # currently masks were saved with values of 0 or 255 for easy visualization
+      mask = (np.array(Image.open(mask_fp)) / 255).astype(np.bool)
+      assert len(mask.shape) == 2
+      # TODO: clean up filename patterns, should just be loading instance_dir/origin.npz
+      #origin = np.load(os.path.join(instance_dir, ""))
+      origin = np.load(os.path.join(mask.split("_mask.png")[0], "_origin.npz"))
+      assert len(origin.shape) == 1 and origin.shape[0] == 2
+
       for path in paths:
         assert len(path.shape) == 2
         assert path.shape[1] == 2
-        self.data[layout_id][instance_id].append(path)
+        self.data[layout_id][instance_id].append(MaskPath(mask, origin, path))
 
     self.train_test_split()
 

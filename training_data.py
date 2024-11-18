@@ -9,6 +9,7 @@ from models import AttentionUNet
 from typing import DefaultDict, List, Dict
 from scipy.ndimage import convolve
 import time
+from tqdm import tqdm
 
 """
 New dataloader:
@@ -72,19 +73,22 @@ class MaskPath:
     return self.tokens
 
 class ViTDataLoader:
-  def __init__(self, data_dir, test_layout_split:int=1):
+  def __init__(self, data_dir):
     self.data_dir = data_dir
-    # We are using precomputed masks
-    masks = set(glob.glob(os.path.join(data_dir, "*", "*", "*_mask.png"))) 
-    self.data = defaultdict(lambda: defaultdict(list))
-    self.test_layout_split = test_layout_split
+    self.data = self.load_maskpath_db()
+    self.train_test_split()
 
-    for mask_fp in masks:
+  def load_maskpath_db(self, paths_handle:str="paths.npz"):
+    # We are using precomputed masks
+    masks = set(glob.glob(os.path.join(self.data_dir, "*", "*", "*_mask.png"))) 
+    data = defaultdict(lambda: defaultdict(list))
+
+    for mask_fp in tqdm(masks, desc="Processing masks", unit="mask"):
       # organize data into hierarchy for balanced layout class sampling
       # layout_dir > instance_dir > mask/origin/path
       instance_dir = os.path.dirname(mask_fp)
 
-      paths_fp = os.path.join(instance_dir, "paths.npz")
+      paths_fp = os.path.join(instance_dir, paths_handle)
       if os.path.exists(paths_fp):
         paths = list(np.load(paths_fp, allow_pickle=True)['paths'])
         assert len(paths) > 0
@@ -92,7 +96,7 @@ class ViTDataLoader:
 
       layout_dir = os.path.dirname(instance_dir)
       instance_id = int(os.path.relpath(instance_dir, layout_dir))
-      layout_id = int(os.path.relpath(layout_dir, data_dir))
+      layout_id = int(os.path.relpath(layout_dir, self.data_dir))
 
       # currently masks were saved with values of 0 or 255 for easy visualization
       mask = (np.array(Image.open(mask_fp)) / 255).astype(np.uint8)
@@ -103,18 +107,18 @@ class ViTDataLoader:
       assert len(origin.shape) == 1 and origin.shape[0] == 2
       origin = tuple(int(x) for x in origin)
 
-      for path in paths:
+      for path in tqdm(paths, desc=f"Paths for mask {os.path.basename(mask_fp)}", leave=False, unit="path"):
         assert len(path.shape) == 2
         assert path.shape[1] == 2
         mp = MaskPath(mask, origin, path)
         # TODO: load later with multiprocessing if time consuming
         mp.load()
-        self.data[layout_id][instance_id].append(mp)
-
-    self.train_test_split()
+        data[layout_id][instance_id].append(mp)
+    return data
 
   # split along layout instance mask axis (which is a higher level than paths through a layout instance)
   def train_test_split(self):
+    """
     self.train_data = self.data.copy()
     self.test_data = defaultdict(lambda: defaultdict(list))
     for layout_id in self.train_data:
@@ -122,7 +126,12 @@ class ViTDataLoader:
         instance_id = random.choice(list(self.train_data[layout_id].keys()))
         instance_data = self.train_data[layout_id].pop(instance_id)
         self.test_data[layout_id][instance_id] = instance_data
-
+    """
+    # hand curate test data for now
+    # an expert human would correctly classify these test data
+    # an expert human wouldn't necessarily be able to classify all training data, which is more random
+    self.train_data = self.data.copy()
+    self.test_data = defaultdict(lambda: defaultdict(list))
 
 class _old_ViTDataLoader:
   def __init__(self, data_dir, test_samples_per_class=0):

@@ -10,6 +10,7 @@ for i,layout in enumerate(dl.train_data):
     layout_sum += count
   print(f"layout {layout}, total: {layout_sum} paths")
 
-epoch = dl.get_epoch(min_samples_per_class_per_step=5)
+X, Y = dl.get_epoch(min_samples_per_class_per_step=5)
+X_test, Y_test = dl.get_test_data()
 
 done = 1

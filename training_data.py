@@ -6,7 +6,7 @@ import numpy as np
 from PIL import Image
 from helpers import shrink_with_origin, pad_to_square_multiple
 from models import AttentionUNet
-from typing import DefaultDict, List, Dict
+from typing import DefaultDict, List, Dict, Tuple
 from scipy.ndimage import convolve
 import time
 from tqdm import tqdm
@@ -133,16 +133,9 @@ class ViTDataLoader:
     self.train_data = self.data.copy()
     self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
 
-  def get_epoch(self, min_samples_per_class_per_step=1):
-    # flatten data to pool all mask/paths at layout level
-    # then randomly sample mask/path pairs into steps
-    # minimize samples per step while maximizing class balance
-    layout_to_samples = defaultdict(list)
-    for layout in self.train_data:
-      for instance in self.train_data[layout]:
-        layout_to_samples[layout] += self.train_data[layout][instance]
-      random.shuffle(layout_to_samples[layout])
-    num_classes = len(layout_to_samples)
+  def get_epoch(self, min_samples_per_class_per_step=1) -> Tuple[List[List]]:
+    layout_to_samples = flatten_instances(self.train_data)
+    for samples in layout_to_samples.values(): random.shuffle(samples)
     
     # assume some level of class balance in training data
     samples_per_layout = count_samples(layout_to_samples)
@@ -150,19 +143,37 @@ class ViTDataLoader:
 
     num_steps = min(samples_per_layout) // min_samples_per_class_per_step
     assert num_steps > 0, f"not enough samples ({min(samples_per_layout)}) to meet quota for min_samples_per_class_per_step"
-    epoch = [[] for _ in range(num_steps)]
-
-    # Below two lines ensure max step size is num_classes * 2
-    #assert max(samples_per_layout) / min(samples_per_layout) < 2
-    #epoch = [[] for _ in range(min(samples_per_layout))]
+    # divide epoch into steps
+    X = [[] for _ in range(num_steps)]
 
     while sum(count_samples(layout_to_samples)) > 0:
-      for step in epoch:
+      for step in X:
         for layout_samples in layout_to_samples.values():
           if layout_samples:
             step.append(layout_samples.pop())
 
-    return epoch
+    Y = []
+    for step in X:
+      Y.append([sample.layout_id for sample in step])
+
+    return X, Y
+
+  def get_test_data(self):
+    layout_to_samples = flatten_instances(self.test_data)
+    X = []
+    for samples in layout_to_samples.values():
+      X += samples
+    Y = [sample.layout_id for sample in X]
+    return X, Y
+
+# layout > instance > mask/path ---> layout > mask/path
+def flatten_instances(l_i_mp):
+  l_mp = defaultdict(list)
+  for layout in l_i_mp:
+    for instance in l_i_mp[layout]:
+      l_mp[layout] += l_i_mp[layout][instance]
+  return l_mp
+
 
 def count_samples(layout_to_samples: Dict[int, List]):
   return list(len(v) for v in layout_to_samples.values())

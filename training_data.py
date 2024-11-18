@@ -133,26 +133,32 @@ class ViTDataLoader:
     self.train_data = self.data.copy()
     self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
 
-  def get_epoch(self):
+  def get_epoch(self, min_samples_per_class_per_step=1):
     # flatten data to pool all mask/paths at layout level
     # then randomly sample mask/path pairs into steps
     # minimize samples per step while maximizing class balance
-    flattened = defaultdict(list)
+    layout_to_samples = defaultdict(list)
     for layout in self.train_data:
       for instance in self.train_data[layout]:
-        flattened[layout] += self.train_data[layout][instance]
-      random.shuffle(flattened[layout])
-    num_classes = len(flattened)
+        layout_to_samples[layout] += self.train_data[layout][instance]
+      random.shuffle(layout_to_samples[layout])
+    num_classes = len(layout_to_samples)
     
-    # require some level of class balance in training data
-    samples_per_layout = count_samples(flattened)
-    # Below two lines ensure max step size is num_classes * 2
+    # assume some level of class balance in training data
+    samples_per_layout = count_samples(layout_to_samples)
     assert max(samples_per_layout) / min(samples_per_layout) < 2
-    epoch = [[] for _ in range(min(samples_per_layout))]
 
-    while sum(count_samples(flattened)) > 0:
+    num_steps = min(samples_per_layout) // min_samples_per_class_per_step
+    assert num_steps > 0, f"not enough samples ({min(samples_per_layout)}) to meet quota for min_samples_per_class_per_step"
+    epoch = [[] for _ in range(num_steps)]
+
+    # Below two lines ensure max step size is num_classes * 2
+    #assert max(samples_per_layout) / min(samples_per_layout) < 2
+    #epoch = [[] for _ in range(min(samples_per_layout))]
+
+    while sum(count_samples(layout_to_samples)) > 0:
       for step in epoch:
-        for layout_samples in flattened.values():
+        for layout_samples in layout_to_samples.values():
           if layout_samples:
             step.append(layout_samples.pop())
 

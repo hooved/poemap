@@ -9,3 +9,7 @@ for i,layout in enumerate(dl.train_data):
     print(f"layout {layout}, instance {instance}: {count} paths")
     layout_sum += count
   print(f"layout {layout}, total: {layout_sum} paths")
+
+epoch = dl.get_epoch()
+
+done = 1

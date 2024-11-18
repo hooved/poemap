@@ -61,8 +61,8 @@ Tensor(batch_size, 128,...)
 # mask-path pairs are the highest level unit of data for training
 # each mask-path pair is converted to a token sequence for ViT forward pass
 class MaskPath:
-  def __init__(self, mask: np.ndarray, origin: np.ndarray, path: np.ndarray):
-    self.mask, self.origin, self.path = mask, origin, path
+  def __init__(self, layout_id: int, mask: np.ndarray, origin: np.ndarray, path: np.ndarray):
+    self.layout_id, self.mask, self.origin, self.path = layout_id, mask, origin, path
     self.tokens = None
 
   def load(self):
@@ -110,9 +110,9 @@ class ViTDataLoader:
       for path in tqdm(paths, desc=f"Paths for mask {os.path.basename(mask_fp)}", leave=False, unit="path"):
         assert len(path.shape) == 2
         assert path.shape[1] == 2
-        mp = MaskPath(mask, origin, path)
+        mp = MaskPath(layout_id, mask, origin, path)
         # TODO: load later with multiprocessing if time consuming
-        mp.load()
+        #mp.load()
         data[layout_id][instance_id].append(mp)
     return data
 
@@ -132,6 +132,35 @@ class ViTDataLoader:
     # an expert human wouldn't necessarily be able to classify all training data, which is more random
     self.train_data = self.data.copy()
     self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
+
+  def get_epoch(self):
+    # flatten data to pool all mask/paths at layout level
+    # then randomly sample mask/path pairs into steps
+    # minimize samples per step while maximizing class balance
+    flattened = defaultdict(list)
+    for layout in self.train_data:
+      for instance in self.train_data[layout]:
+        flattened[layout] += self.train_data[layout][instance]
+      random.shuffle(flattened[layout])
+    num_classes = len(flattened)
+    
+    # require some level of class balance in training data
+    samples_per_layout = count_samples(flattened)
+    # Below two lines ensure max step size is num_classes * 2
+    assert max(samples_per_layout) / min(samples_per_layout) < 2
+    epoch = [[] for _ in range(min(samples_per_layout))]
+
+    while sum(count_samples(flattened)) > 0:
+      for step in epoch:
+        for layout_samples in flattened.values():
+          if layout_samples:
+            step.append(layout_samples.pop())
+
+    return epoch
+
+def count_samples(layout_to_samples: Dict[int, List]):
+  return list(len(v) for v in layout_to_samples.values())
+    
 
 class _old_ViTDataLoader:
   def __init__(self, data_dir, test_samples_per_class=0):

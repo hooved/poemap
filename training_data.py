@@ -131,7 +131,7 @@ class ViTDataLoader:
     # an expert human would correctly classify these test data
     # an expert human wouldn't necessarily be able to classify all training data, which is more random
     self.train_data = self.data.copy()
-    self.test_data = defaultdict(lambda: defaultdict(list))
+    self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
 
 class _old_ViTDataLoader:
   def __init__(self, data_dir, test_samples_per_class=0):

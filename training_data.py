@@ -66,8 +66,13 @@ class MaskPath:
 
   def load(self):
     if self.tokens is not None: return self.tokens
+    #t1 = time.perf_counter()
     revealed = explore_map(self.mask, self.path)
+    #print(f"explore_map elapsed: {(time.perf_counter()-t1):0.4f}")
+    #Image.fromarray(revealed * 255, mode="L").save("mp1.png")
+    #t1 = time.perf_counter()
     self.tokens = tokenize_mask(revealed, self.origin)
+    #print(f"tokenize_mask elapsed: {(time.perf_counter()-t1):0.4f}")
     return self.tokens
 
 class ViTDataLoader:
@@ -108,7 +113,7 @@ class ViTDataLoader:
         mp = MaskPath(mask, origin, path)
         # TODO: load later with multiprocessing if time consuming
         #t1 = time.perf_counter()
-        #mp.load()
+        mp.load()
         #print(f"mp.load() elapsed: {(time.perf_counter() - t1):.4f}")
         self.data[layout_id][instance_id].append(mp)
 
@@ -368,12 +373,28 @@ def explore_map(no_fog_map: np.ndarray, path: np.ndarray, light_radius=65):
     x_max = min(x + light_radius + 1, no_fog_map.shape[1])
     y_min = max(y - light_radius, 0)
     y_max = min(y + light_radius + 1, no_fog_map.shape[0])
+
+    # Create grid of coordinates for the bounding box
+    yy, xx = np.ogrid[y_min:y_max, x_min:x_max]
+        
+    # Compute mask of points within the circular radius
+    mask = (yy - y)**2 + (xx - x)**2 <= lr_squared
+
+    # Update the revealed map using the mask
+    revealed[y_min:y_max, x_min:x_max] = np.maximum(
+        revealed[y_min:y_max, x_min:x_max],  # Keep previously revealed values
+        no_fog_map[y_min:y_max, x_min:x_max] * mask
+    )
+
+    """
     # Iterate over the bounding box and set pixels within the circle radius
     for i in range(y_min, y_max):
       for j in range(x_min, x_max):
         # Check if the pixel is within the circular radius
         if (i - y)**2 + (j - x)**2 <= lr_squared:
           revealed[i, j] = no_fog_map[i, j]
+    """
+
   return revealed
 
 def tokenize_mask(mask: np.ndarray, origin: np.ndarray):

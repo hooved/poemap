@@ -6,7 +6,7 @@ from tinygrad import Tensor, dtypes, TinyJit
 from tinygrad.nn import Conv2d, Linear, GroupNorm
 from tinygrad.nn.state import safe_load, load_state_dict
 import numpy as np
-from typing import List
+from typing import List, Tuple
 from models.UNet import ResBlock
 
 # adapted from tinygrad ViT code
@@ -27,30 +27,33 @@ class ViT:
     self.jit_inference = None
     self.jit_shape = None
 
-  def prep_tokens(self, x: List[np.ndarray]) -> Tensor:
+  def prep_tokens(self, x: List[Tuple[Tensor]]) -> Tensor:
     # need to use np arrays because tinygrad throws errors on noncontiguous assignments during pos embed calcs
     #class_tokens = self.cls_token.add(Tensor.zeros(len(x),1,1))
 
     # pad each tensor in x with mask tokens, then batch together
     # todo: batch layouts with same # non-mask tokens? lots of uneven batches grouped together here
-    for i, layout in enumerate(x):
-      pe = Tensor(get_2d_pos_embed(layout, self.embed_dim), requires_grad=False)
+    prepped = []
+    #for i, (layout, pe) in enumerate(x):
+    for layout, pe in x:
+      #pe = Tensor(get_2d_pos_embed(layout, self.embed_dim), requires_grad=False)
       # Throw out last two elements of last axis, which contained x,y-coord data
       # Now layout is only zeroes and ones
-      layout = layout[:,:,:,0].astype(np.bool)
-      layout = Tensor(layout, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+      #layout = layout[:,:,:,0].astype(np.bool)
+      #layout = Tensor(layout, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+
       layout = self.embedding(layout).add(pe)
       if layout.shape[0] < self.max_tokens:
         mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))
-        x[i] = layout.cat(mask_tokens, dim=0)
+        prepped.append(layout.cat(mask_tokens, dim=0))
       else:
         # Use closest tokens to origin, which more represent training data
         # Current assumption is that these tokens are ordered by euclidean distance from origin,
         #  based on implementation of training_data.tokenize_minimap (with distance_sort at end)
         # TODO: should we randomly sample instead of using tokens closest to origin?
-        x[i] = layout[0:self.max_tokens]
+        prepped.append(layout[0:self.max_tokens])
 
-    return Tensor.stack(*x)
+    return Tensor.stack(*prepped)
 
   def run(self, x: Tensor):
     class_tokens = self.cls_token.add(Tensor.zeros(x.shape[0],1,1))
@@ -64,7 +67,7 @@ class ViT:
   def jit_run(self, x: Tensor):
     return self.run(x).realize()
 
-  def __call__(self, x: List[np.ndarray]) -> Tensor:
+  def __call__(self, x: List[Tuple[Tensor]]) -> Tensor:
     x = self.prep_tokens(x)
     if not Tensor.training:
       x.requires_grad = False

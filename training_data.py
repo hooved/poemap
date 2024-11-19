@@ -10,6 +10,7 @@ from typing import DefaultDict, List, Dict, Tuple
 from scipy.ndimage import convolve
 import time
 from tqdm import tqdm
+from tinygrad import Tensor
 
 """
 New dataloader:
@@ -61,20 +62,25 @@ Tensor(batch_size, 128,...)
 # mask-path pairs are the highest level unit of data for training
 # each mask-path pair is converted to a token sequence for ViT forward pass
 class MaskPath:
-  def __init__(self, layout_id: int, mask: np.ndarray, origin: np.ndarray, path: np.ndarray):
-    self.layout_id, self.mask, self.origin, self.path = layout_id, mask, origin, path
-    self.tokens = None
+  def __init__(self, layout_id: int, mask: np.ndarray, origin: np.ndarray,
+                path: np.ndarray, embed_dim: int):
+    self.layout_id, self.mask, self.origin, self.path, self.embed_dim = layout_id, mask, origin, path, embed_dim
+    self.tokens, self.pe = None, None
 
   def load(self):
-    if self.tokens is not None: return self.tokens
+    if self.tokens is not None and self.pe is not None: return
     revealed = explore_map(self.mask, self.path)
     #Image.fromarray(revealed * 255, mode="L").save("mp1.png")
     self.tokens = tokenize_mask(revealed, self.origin)
-    return self.tokens
+    self.pe = Tensor(get_2d_pos_embed(self.tokens, self.embed_dim), requires_grad=False)
+    # Throw out last two elements of last axis, which contained x,y-coord data
+    # Now layout is only zeroes and ones
+    self.tokens = self.tokens[:,:,:,0].astype(np.bool)
+    self.tokens = Tensor(self.tokens, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
 
 class ViTDataLoader:
-  def __init__(self, data_dir):
-    self.data_dir = data_dir
+  def __init__(self, data_dir, embed_dim=256):
+    self.data_dir, self.embed_dim = data_dir, embed_dim
     self.data = self.load_maskpath_db()
     self.train_test_split()
 
@@ -110,7 +116,7 @@ class ViTDataLoader:
       for path in tqdm(paths, desc=f"Paths for mask {os.path.basename(mask_fp)}", leave=False, unit="path"):
         assert len(path.shape) == 2
         assert path.shape[1] == 2
-        mp = MaskPath(layout_id, mask, origin, path)
+        mp = MaskPath(layout_id, mask, origin, path, self.embed_dim)
         # TODO: load later with multiprocessing if time consuming
         mp.load()
         data[layout_id][instance_id].append(mp)
@@ -144,30 +150,30 @@ class ViTDataLoader:
     num_steps = min(samples_per_layout) // min_samples_per_class_per_step
     assert num_steps > 0, f"not enough samples ({min(samples_per_layout)}) to meet quota for min_samples_per_class_per_step"
     # divide epoch into steps
-    X = [[] for _ in range(num_steps)]
+    X_steps = [[] for _ in range(num_steps)]
 
     while sum(count_samples(layout_to_samples)) > 0:
-      for step in X:
+      for X in X_steps:
         for layout_samples in layout_to_samples.values():
           if layout_samples:
-            step.append(layout_samples.pop())
+            X.append(layout_samples.pop())
 
-    Y = []
-    for step in X:
-      Y.append([sample.layout_id for sample in step])
-    for step in X:
-      for i, sample in enumerate(step):
+    Y_steps = []
+    for X in X_steps:
+      Y_steps.append(Tensor([sample.layout_id for sample in X], requires_grad=False))
+    for X in X_steps:
+      for i, sample in enumerate(X):
         assert sample.tokens is not None, "realize tokens with MaskPath.load()"
-        step[i] = sample.tokens
-    return X, Y
+        X[i] = (sample.tokens, sample.pe)
+    return X_steps, Y_steps
 
   def get_test_data(self):
     layout_to_samples = flatten_instances(self.test_data)
     X = []
     for samples in layout_to_samples.values():
       X += samples
-    Y = [sample.layout_id for sample in X]
-    X = [sample.tokens for sample in X]
+    Y = Tensor([sample.layout_id for sample in X], requires_grad=False)
+    X = [(sample.tokens, sample.pe) for sample in X]
     return X, Y
 
 # layout > instance > mask/path ---> layout > mask/path
@@ -338,6 +344,23 @@ def tokenize_mask(mask: np.ndarray, origin: np.ndarray):
   patches = get_patches(mask, origin)
   tokens = get_tokens(patches)
   return tokens
+
+# frequencies (denoms) based on poe-learning-layouts 1d positions embeds for time
+# Here we are trying to embed the 2d position of the patch relative to the map entrance
+# We want to encode any possible (x,y) position where x and y are any integer
+def get_2d_pos_embed(tokens, dim):
+  assert dim % 4 == 0
+  num_tokens = tokens.shape[0]
+  x_coords = tokens[:,0,0,1].reshape(tokens.shape[0], 1)
+  y_coords = tokens[:,0,0,2].reshape(tokens.shape[0], 1)
+  embeds = np.zeros((num_tokens, dim))
+  denoms = np.exp(np.arange(0, dim, 4) / dim * -np.log(10000.0)).reshape(1, dim // 4)
+  embeds[:, 0::4] = np.sin(x_coords * denoms) 
+  embeds[:, 1::4] = np.cos(x_coords * denoms) 
+  embeds[:, 2::4] = np.sin(y_coords * denoms) 
+  embeds[:, 3::4] = np.cos(y_coords * denoms) 
+  # at this point, dtype is float64
+  return embeds.astype(np.float32)
 
 if __name__=="__main__":
 

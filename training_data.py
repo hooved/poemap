@@ -112,7 +112,7 @@ class ViTDataLoader:
         assert path.shape[1] == 2
         mp = MaskPath(layout_id, mask, origin, path)
         # TODO: load later with multiprocessing if time consuming
-        #mp.load()
+        mp.load()
         data[layout_id][instance_id].append(mp)
     return data
 
@@ -155,7 +155,10 @@ class ViTDataLoader:
     Y = []
     for step in X:
       Y.append([sample.layout_id for sample in step])
-
+    for step in X:
+      for i, sample in enumerate(step):
+        assert sample.tokens is not None, "realize tokens with MaskPath.load()"
+        step[i] = sample.tokens
     return X, Y
 
   def get_test_data(self):
@@ -164,6 +167,7 @@ class ViTDataLoader:
     for samples in layout_to_samples.values():
       X += samples
     Y = [sample.layout_id for sample in X]
+    X = [sample.tokens for sample in X]
     return X, Y
 
 # layout > instance > mask/path ---> layout > mask/path

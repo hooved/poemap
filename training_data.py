@@ -412,6 +412,7 @@ def explore_map(no_fog_map: np.ndarray, path: np.ndarray, light_radius=65):
 def tokenize_mask(mask: np.ndarray, origin: np.ndarray):
   patches = get_patches(mask, origin)
   tokens = get_tokens(patches)
+  tokens = distance_sort(tokens)
   return tokens
 
 # frequencies (denoms) based on poe-learning-layouts 1d positions embeds for time

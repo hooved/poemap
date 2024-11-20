@@ -170,7 +170,6 @@ class ViTDataLoader:
     return X_steps, Y_steps
 
   def _parallel_realize(self, X_steps: List[List[MaskPath]]):
-    #X_steps = X_steps + ["terminate"] # add signal to terminate parallel process
     realized_q = Queue()
     realizer_p = Process(target=realizer_proc, args=(X_steps, realized_q,))
     realizer_p.start()
@@ -194,17 +193,19 @@ class ViTDataLoader:
 
   def get_epoch(self, min_samples_per_class_per_step=5):
     X_steps, Y_steps = self.schedule_epoch(min_samples_per_class_per_step)
+    # pad for consistent batch size, for jit acceleration
+    target_bs = max(len(step) for step in X_steps)
 
     if not self.all_data_realized:
       for i, X in enumerate(self._parallel_realize(X_steps)):
         Y = Y_steps[i]
-        yield [(sample.tokens, sample.pe) for sample in X], Y
+        yield pad_batch(maskpaths_to_tensors(X), Y, target_bs)
 
       self.all_data_realized = True
 
     else:
       for X, Y in zip(X_steps, Y_steps):
-        yield [(sample.tokens, sample.pe) for sample in X], Y
+        yield pad_batch(maskpaths_to_tensors(X), Y, target_bs)
 
   def get_test_data(self):
     layout_to_samples = flatten_instances(self.test_data)
@@ -215,6 +216,25 @@ class ViTDataLoader:
     # realize
     X = [sample.load() for sample in X]
     return X, Y
+
+maskpaths_to_tensors = lambda X: [mp.load() for mp in X]
+
+def pad_batch(X: List[Tuple[Tensor]], Y: Tensor, target_bs: int):
+  num_pad_samples = target_bs - len(X)
+  batch_pad_mask = Tensor(len(X) * [1.], requires_grad=False)
+  if num_pad_samples:
+    pad_tokens = Tensor.zeros(X[0][0].shape, requires_grad=False)
+    pad_pe = Tensor.zeros(X[0][1].shape, requires_grad=False)
+    pad_X = num_pad_samples * [(pad_tokens, pad_pe)]
+    X = X + pad_X
+
+    pad_Y = num_pad_samples * [0]
+    Y = Y.cat(Tensor(pad_Y))
+    Y.requires_grad = False
+
+    batch_pad_mask = batch_pad_mask.cat(Tensor(num_pad_samples * [0.]))
+    batch_pad_mask.requires_grad = False
+  return X, Y, batch_pad_mask
 
 def realizer_proc(X_steps: List[List[MaskPath]], realized_q: Queue):
   try:

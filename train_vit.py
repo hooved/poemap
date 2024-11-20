@@ -15,13 +15,16 @@ if __name__=="__main__":
   
   optim = nn.optim.Adam(nn.state.get_parameters(model))
 
-  def step(X: List[Tuple[Tensor]], Y: Tensor):
-    Tensor.training = True
+  def step(X: Tensor, Y: Tensor, batch_pad_mask: Tensor):
     optim.zero_grad()
-    loss = model(X).cross_entropy(Y).backward()
+    loss = model.run(X).cross_entropy(Y, reduction="none")
+    # zero out losses from pad samples
+    loss = loss * batch_pad_mask
+    loss = loss.sum() / batch_pad_mask.sum()
+    loss.backward()
     optim.step()
     return loss.realize()
-  #jit_step = TinyJit(step)
+  jit_step = TinyJit(step)
 
   def eval_step(X: List[Tuple[Tensor]], Y: Tensor):
     Tensor.training = False
@@ -35,10 +38,11 @@ if __name__=="__main__":
     elapsed = 0
 
     for epoch in range(num_epochs):
-      for step_id, (X, Y) in enumerate(dl.get_epoch(min_samples_per_class_per_step=5)):
+      for step_id, (X, Y, batch_pad_mask) in enumerate(dl.get_epoch(min_samples_per_class_per_step=5)):
 
-        #loss = jit_step(X, Y).item()
-        loss = step(X, Y).item()
+        Tensor.training = True
+        X = model.prep_tokens(X)
+        loss = jit_step(X, Y, batch_pad_mask).item()
         elapsed += 1
 
         #if step_id % 10 == 0:

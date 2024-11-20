@@ -11,6 +11,7 @@ from scipy.ndimage import convolve
 import time
 from tqdm import tqdm
 from tinygrad import Tensor
+from multiprocessing import Process, Queue
 
 """
 New dataloader:
@@ -62,13 +63,16 @@ Tensor(batch_size, 128,...)
 # mask-path pairs are the highest level unit of data for training
 # each mask-path pair is converted to a token sequence for ViT forward pass
 class MaskPath:
-  def __init__(self, layout_id: int, mask: np.ndarray, origin: np.ndarray,
-                path: np.ndarray, embed_dim: int):
-    self.layout_id, self.mask, self.origin, self.path, self.embed_dim = layout_id, mask, origin, path, embed_dim
-    self.tokens, self.pe = None, None
+  def __init__(self, layout_id: int, instance_id: int, path_id: int, 
+               mask: np.ndarray, origin: np.ndarray, path: np.ndarray, embed_dim: int):
+
+    self.layout_id, self.instance_id, self.path_id = layout_id, instance_id, path_id
+    self.mask, self.origin, self.path, self.embed_dim = mask, origin, path, embed_dim
+
+    self.tokens, self.pe = None, None # lazy loading; these are realized later
 
   def load(self):
-    if self.tokens is not None and self.pe is not None: return
+    if self.tokens is not None and self.pe is not None: return self.tokens, self.pe
     revealed = explore_map(self.mask, self.path)
     #Image.fromarray(revealed * 255, mode="L").save("mp1.png")
     self.tokens = tokenize_mask(revealed, self.origin)
@@ -77,10 +81,12 @@ class MaskPath:
     # Now layout is only zeroes and ones
     self.tokens = self.tokens[:,:,:,0].astype(np.bool)
     self.tokens = Tensor(self.tokens, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+    return self.tokens, self.pe
 
 class ViTDataLoader:
   def __init__(self, data_dir, embed_dim=256):
     self.data_dir, self.embed_dim = data_dir, embed_dim
+    self.all_data_realized = False
     self.data = self.load_maskpath_db()
     self.train_test_split()
 
@@ -89,7 +95,7 @@ class ViTDataLoader:
     masks = set(glob.glob(os.path.join(self.data_dir, "*", "*", "*_mask.png"))) 
     data = defaultdict(lambda: defaultdict(list))
 
-    for mask_fp in tqdm(masks, desc="Processing masks", unit="mask"):
+    for mask_fp in tqdm(masks, desc=f"Lazy loading mask/path pairs for handle: {paths_handle}", unit="mask"):
       # organize data into hierarchy for balanced layout class sampling
       # layout_dir > instance_dir > mask/origin/path
       instance_dir = os.path.dirname(mask_fp)
@@ -113,12 +119,12 @@ class ViTDataLoader:
       assert len(origin.shape) == 1 and origin.shape[0] == 2
       origin = tuple(int(x) for x in origin)
 
-      for path in tqdm(paths, desc=f"Paths for mask {os.path.basename(mask_fp)}", leave=False, unit="path"):
+      for path_id, path in enumerate(tqdm(paths, desc=f"Paths for mask {os.path.basename(mask_fp)}", leave=False, unit="path")):
         assert len(path.shape) == 2
         assert path.shape[1] == 2
-        mp = MaskPath(layout_id, mask, origin, path, self.embed_dim)
-        # TODO: load later with multiprocessing if time consuming
-        mp.load()
+        mp = MaskPath(layout_id, instance_id, path_id, mask, origin, path, self.embed_dim)
+        # load later with a child process
+        #mp.load()
         data[layout_id][instance_id].append(mp)
     return data
 
@@ -139,7 +145,7 @@ class ViTDataLoader:
     self.train_data = self.data.copy()
     self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
 
-  def get_epoch(self, min_samples_per_class_per_step=1) -> Tuple[List[List]]:
+  def schedule_epoch(self, min_samples_per_class_per_step=1) -> Tuple[List[List]]:
     layout_to_samples = flatten_instances(self.train_data)
     for samples in layout_to_samples.values(): random.shuffle(samples)
     
@@ -161,23 +167,66 @@ class ViTDataLoader:
     Y_steps = []
     for X in X_steps:
       Y_steps.append(Tensor([sample.layout_id for sample in X], requires_grad=False))
-    for X in X_steps:
-      for i, sample in enumerate(X):
-        assert sample.tokens is not None, "realize tokens with MaskPath.load()"
-        X[i] = (sample.tokens, sample.pe)
     return X_steps, Y_steps
+
+  def _parallel_realize(self, X_steps: List[List[MaskPath]]):
+    #X_steps = X_steps + ["terminate"] # add signal to terminate parallel process
+    realized_q = Queue()
+    realizer_p = Process(target=realizer_proc, args=(X_steps, realized_q,))
+    realizer_p.start()
+    try:
+      for i, _ in enumerate(X_steps):
+        i_X = realized_q.get()
+        assert (X := i_X.get(i)), "mismatch when receiving data from parallel loader"
+        if isinstance(X, dict) and (e := X.get("error")):
+          raise Exception(e)
+        else:
+          # MaskPath realization occurred in child process; parent process objects are not realized
+          # replace parent process's unrealized objects with realized ones, so future epochs don't need to reload data
+          # TODO: this data is currently stored in GPU memory; if needed, move to host memory or unload/reload
+          for mp in X:
+            parent_mp = self.data[mp.layout_id][mp.instance_id][mp.path_id]
+            parent_mp.tokens, parent_mp.pe = mp.tokens, mp.pe
+          yield X # should now be equivalent to X_steps[i]
+    finally:
+      realizer_p.terminate()
+      realizer_p.join()
+
+  def get_epoch(self, min_samples_per_class_per_step=5):
+    X_steps, Y_steps = self.schedule_epoch(min_samples_per_class_per_step)
+
+    if not self.all_data_realized:
+      for i, X in enumerate(self._parallel_realize(X_steps)):
+        Y = Y_steps[i]
+        yield [(sample.tokens, sample.pe) for sample in X], Y
+
+      self.all_data_realized = True
+
+    else:
+      for X, Y in zip(X_steps, Y_steps):
+        yield [(sample.tokens, sample.pe) for sample in X], Y
 
   def get_test_data(self):
     layout_to_samples = flatten_instances(self.test_data)
-    X = []
+    X: List[MaskPath] = []
     for samples in layout_to_samples.values():
       X += samples
     Y = Tensor([sample.layout_id for sample in X], requires_grad=False)
-    X = [(sample.tokens, sample.pe) for sample in X]
+    # realize
+    X = [sample.load() for sample in X]
     return X, Y
 
+def realizer_proc(X_steps: List[List[MaskPath]], realized_q: Queue):
+  try:
+    for i, X in enumerate(tqdm(X_steps, desc="Realizing steps", unit="step")):
+      for sample in X: sample.load()
+      realized_q.put({i: X})
+
+  except Exception as e:
+    realized_q.put({"error": str(e)})
+
 # layout > instance > mask/path ---> layout > mask/path
-def flatten_instances(l_i_mp):
+def flatten_instances(l_i_mp: DefaultDict[int, DefaultDict[int, List[MaskPath]]]) -> DefaultDict[int, List[MaskPath]]:
   l_mp = defaultdict(list)
   for layout in l_i_mp:
     for instance in l_i_mp[layout]:

@@ -35,8 +35,8 @@ if __name__=="__main__":
     elapsed = 0
 
     for epoch in range(num_epochs):
-      X_steps, Y_steps = dl.get_epoch(min_samples_per_class_per_step=5)
-      for step_id, (X, Y) in enumerate(zip(X_steps, Y_steps)):
+      for step_id, (X, Y) in enumerate(dl.get_epoch(min_samples_per_class_per_step=5)):
+
         #loss = jit_step(X, Y).item()
         loss = step(X, Y).item()
         elapsed += 1

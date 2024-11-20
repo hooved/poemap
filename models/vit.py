@@ -28,20 +28,11 @@ class ViT:
     self.jit_shape = None
 
   def prep_tokens(self, x: List[Tuple[Tensor]]) -> Tensor:
-    # need to use np arrays because tinygrad throws errors on noncontiguous assignments during pos embed calcs
-    #class_tokens = self.cls_token.add(Tensor.zeros(len(x),1,1))
 
     # pad each tensor in x with mask tokens, then batch together
-    # todo: batch layouts with same # non-mask tokens? lots of uneven batches grouped together here
+    # TODO: batch layouts with same # non-mask tokens? lots of uneven batches grouped together here
     prepped = []
-    #for i, (layout, pe) in enumerate(x):
     for layout, pe in x:
-      #pe = Tensor(get_2d_pos_embed(layout, self.embed_dim), requires_grad=False)
-      # Throw out last two elements of last axis, which contained x,y-coord data
-      # Now layout is only zeroes and ones
-      #layout = layout[:,:,:,0].astype(np.bool)
-      #layout = Tensor(layout, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
-
       layout = self.embedding(layout).add(pe)
       if layout.shape[0] < self.max_tokens:
         mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))

@@ -9,7 +9,7 @@ if __name__=="__main__":
   dl = ViTDataLoader(data_dir="data/train")
 
   model_name = "ViT5"
-  model = ViT(model_name, 2, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
+  model = ViT(model_name, 9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
 
   X_test, Y_test = dl.get_test_data()
   

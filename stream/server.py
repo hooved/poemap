@@ -30,7 +30,6 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
             np.savez_compressed(os.path.join(save_dir, f"{timestamp}_origin.npz"), data=origin)
             Image.fromarray(mask * 255, mode="L").save(os.path.join(save_dir, f"{timestamp}_mask.png"))
             np.savez_compressed(os.path.join(save_dir, f"{timestamp}_tokens.npz"), data=tokens)
-          timestamp += 1
 
           pe = Tensor(get_2d_pos_embed(tokens, models["ViT"].embed_dim), requires_grad=False)
           # Throw out last two elements of last axis, which contained x,y-coord data
@@ -48,6 +47,7 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
           print()
           writer.write(layout_id.to_bytes(4, byteorder="big"))
           await writer.drain()
+          timestamp += 1
         else:
           error_val = 9999
           writer.write(error_val.to_bytes(4, byteorder="big"))

@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image
 import asyncio, os
 from models import AttentionUNet, ViT
-from tinygrad.nn.state import safe_load, load_state_dict
+from tinygrad.nn.state import safe_save
 from tinygrad import dtypes, Tensor, TinyJit
 from training_data import extract_map_features, get_patches, get_tokens, tokenize_minimap, get_2d_pos_embed
 from functools import partial
@@ -26,10 +26,10 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
           if os.getenv("COLLECT"):
             save_dir = os.path.join("data", "train", "collect")
             os.makedirs(save_dir, exist_ok=True)
-            Image.fromarray(minimap).save(os.path.join(save_dir, f"{timestamp}.png"))
+            Image.fromarray(minimap).save(os.path.join(save_dir, f"{timestamp}_raw.png"))
             np.savez_compressed(os.path.join(save_dir, f"{timestamp}_origin.npz"), data=origin)
             Image.fromarray(mask * 255, mode="L").save(os.path.join(save_dir, f"{timestamp}_mask.png"))
-            np.savez_compressed(os.path.join(save_dir, f"{timestamp}.npz"), data=tokens)
+            np.savez_compressed(os.path.join(save_dir, f"{timestamp}_tokens.npz"), data=tokens)
           timestamp += 1
 
           pe = Tensor(get_2d_pos_embed(tokens, models["ViT"].embed_dim), requires_grad=False)
@@ -37,6 +37,7 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
           # Now layout is only zeroes and ones
           tokens = tokens[:,:,:,0].astype(np.bool)
           tokens = Tensor(tokens, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+          print(f"ts {timestamp}")
           print(f"tokens.shape: {tokens.shape}")
           logits = models["ViT"].jit_infer([(tokens, pe)])[0]
           probabilities = [(i, round(float(p)*100,1)) for i,p in enumerate(logits.softmax().numpy()) if p >= 0.01]

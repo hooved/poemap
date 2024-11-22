@@ -10,7 +10,8 @@ if __name__=="__main__":
     layouts = os.listdir(os.path.join("data", "test"))
     #layouts = dict(zip(layouts, [0]*len(layouts)))
     for layout in layouts:
-      print(f"{layout}: {len(os.listdir(os.path.join('data', 'test', layout)))}")
+      if layout != "curation_mask.json":
+        print(f"{layout}: {len(os.listdir(os.path.join('data', 'test', layout)))}")
 
   else:
 

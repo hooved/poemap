@@ -12,6 +12,7 @@ import time
 from tqdm import tqdm
 from tinygrad import Tensor
 from multiprocessing import Process, Queue
+from dataclasses import dataclass
 
 """
 New dataloader:
@@ -76,16 +77,18 @@ class MaskPath:
     revealed = explore_map(self.mask, self.path)
     #Image.fromarray(revealed * 255, mode="L").save("mp1.png")
     self.tokens = tokenize_mask(revealed, self.origin)
-    self.pe = Tensor(get_2d_pos_embed(self.tokens, self.embed_dim), requires_grad=False)
-    # Throw out last two elements of last axis, which contained x,y-coord data
-    # Now layout is only zeroes and ones
-    self.tokens = self.tokens[:,:,:,0].astype(np.bool)
-    self.tokens = Tensor(self.tokens, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+    self.tokens, self.pe = tensorize_tokens(self.tokens, self.embed_dim)
     return self.tokens, self.pe
 
+@dataclass(frozen=True)
+class RealSample:
+  layout_id: int
+  tokens: Tensor
+  pe: Tensor
+
 class ViTDataLoader:
-  def __init__(self, data_dir, embed_dim=256):
-    self.data_dir, self.embed_dim = data_dir, embed_dim
+  def __init__(self, data_dir, test_dir, embed_dim=256):
+    self.data_dir, self.test_dir, self.embed_dim = data_dir, test_dir, embed_dim
     self.all_data_realized = False
     self.data = self.load_maskpath_db()
     self.train_test_split()
@@ -139,11 +142,13 @@ class ViTDataLoader:
         instance_data = self.train_data[layout_id].pop(instance_id)
         self.test_data[layout_id][instance_id] = instance_data
     """
-    # hand curate test data for now
-    # an expert human would correctly classify these test data
-    # an expert human wouldn't necessarily be able to classify all training data, which is more random
     self.train_data = self.data.copy()
-    self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
+    #self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
+
+    # current training data is not identical to test time data; training data is synthetic due to drawing paths in MSPaint to simulate real paths
+    # current test data is identical to what the user will be feeding to the model
+
+    self.test_data = self.load_test_data()
 
   def schedule_epoch(self, min_samples_per_class_per_step=1) -> Tuple[List[List]]:
     layout_to_samples = flatten_instances(self.train_data)
@@ -207,7 +212,23 @@ class ViTDataLoader:
       for X, Y in zip(X_steps, Y_steps):
         yield pad_batch(maskpaths_to_tensors(X), Y, target_bs)
 
+  def load_test_data(self, token_cutoff=50) -> List[RealSample]:
+    test_tokens = set(glob.glob(os.path.join(self.test_dir, "*", "*", "*_tokens.npz"))) 
+    test_data = []
+    for tokens_fp in test_tokens:
+      layout_dir = os.path.dirname(os.path.dirname(tokens_fp))
+      layout_id = int(os.path.relpath(layout_dir, self.test_dir))
+      tokens, pe = tensorize_tokens(np.load(tokens_fp)['data'], self.embed_dim)
+      test_data.append(RealSample(layout_id, tokens, pe))
+    return test_data
+
   def get_test_data(self):
+    assert self.test_data is not None
+    X = [(sample.tokens, sample.pe) for sample in self.test_data]
+    Y = Tensor([sample.layout_id for sample in self.test_data], requires_grad=False)
+    return X, Y
+
+  def ___old_get_test_data(self):
     layout_to_samples = flatten_instances(self.test_data)
     X: List[MaskPath] = []
     for samples in layout_to_samples.values():
@@ -239,7 +260,8 @@ def pad_batch(X: List[Tuple[Tensor]], Y: Tensor, target_bs: int):
 def realizer_proc(X_steps: List[List[MaskPath]], realized_q: Queue):
   try:
     for i, X in enumerate(tqdm(X_steps, desc="Realizing steps", unit="step")):
-      for sample in X: sample.load()
+      for sample in X: 
+        sample.load()
       realized_q.put({i: X})
 
   except Exception as e:
@@ -257,6 +279,14 @@ def count_samples(layout_to_samples: Dict[int, List]):
   return list(len(v) for v in layout_to_samples.values())
     
 get_frame_id = lambda x: int(os.path.splitext(x)[0])
+
+def tensorize_tokens(tokens: np.ndarray, embed_dim):
+  pe = Tensor(get_2d_pos_embed(tokens, embed_dim), requires_grad=False)
+  # Throw out last two elements of last axis, which contained x,y-coord data
+  # Now layout is only zeroes and ones
+  tokens = tokens[:,:,:,0].astype(np.bool)
+  tokens = Tensor(tokens, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
+  return tokens, pe
 
 # extract middle of 4k frame
 # player icon is at 1920, 1060, in 4k
@@ -436,10 +466,10 @@ if __name__=="__main__":
 
   #model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
   #prepare_training_data("data/train", model)
-  dl = ViTDataLoader("data/train")
-  for _ in range(10):
-    t1 = time.perf_counter()
-    X, Y = dl.get_training_data()
-    print(f"elapsed: {(time.perf_counter() - t1):0.3f}")
+  dl = ViTDataLoader(data_dir="data/train", test_dir="data/test")
+  #for _ in range(10):
+    #t1 = time.perf_counter()
+    #X_steps, Y_steps = dl.get_epoch(min_samples_per_class_per_step=5)
+    #print(f"elapsed: {(time.perf_counter() - t1):0.3f}")
 
   done = 1

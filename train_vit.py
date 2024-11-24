@@ -6,9 +6,9 @@ from training_data import ViTDataLoader
 from typing import List, Tuple
 
 if __name__=="__main__":
-  dl = ViTDataLoader(data_dir="data/train")
+  dl = ViTDataLoader(data_dir="data/train", test_dir="data/test")
 
-  model_name = "ViT5"
+  model_name = "ViT6"
   model = ViT(model_name, 9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
 
   X_test, Y_test = dl.get_test_data()
@@ -44,8 +44,7 @@ if __name__=="__main__":
         loss = jit_step(X, Y, batch_pad_mask).item()
         elapsed += 1
 
-        #if step_id % 10 == 0:
-        if step_id % 1 == 0:
+        if step_id % 5 == 0:
           Tensor.training = False
           acc = jit_eval(X_test, Y_test).item()
           print(f"epoch: {epoch:4d}, step: {step_id:4d}, loss: {loss:.7f}, acc: {acc:0.4f}")
@@ -53,7 +52,7 @@ if __name__=="__main__":
         if elapsed >= 20 and loss < last_saved_loss:
           elapsed = 0
           last_saved_loss = loss
-          safe_save(get_state_dict(model), f"data/model/{model.model_name}_{step_id}.safetensors")
+          safe_save(get_state_dict(model), f"data/model/{model.model_name}_{epoch}_{step_id}.safetensors")
   finally:
     safe_save(get_state_dict(model), f"data/model/{model_name}.safetensors")
     print("training done")

@@ -1,6 +1,6 @@
 import pyautogui
 import keyboard
-import time, os, sys, asyncio
+import time, os, sys, asyncio, glob
 from comms import receive_int, send_array, receive_array, ClientHeader
 from helpers import shrink_with_origin
 import numpy as np
@@ -81,11 +81,6 @@ async def consume_minimap(state: AsyncState):
   reader, writer = await asyncio.open_connection('localhost', 50000)
   while True:
     minimap, origin = await state.read()
-    cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
-    cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
-    #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
-    cv2.imshow('Overlay', minimap)
-    cv2.waitKey(1)
     await send_header(writer, ClientHeader.PROCESS_MINIMAP)
     await send_array(writer, minimap)
     await send_array(writer, np.array(origin, dtype=np.uint32))
@@ -95,6 +90,12 @@ async def consume_minimap(state: AsyncState):
       Image.fromarray(minimap).save("failed_minimap.png")
       assert False
     print(f"layout_id = {layout_id}")
+    layout_guide = layout_guides[layout_id]
+    cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
+    #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
+    cv2.imshow('Overlay', layout_guide)
+    cv2.waitKey(1)
 
     if state.stop_stream or state.stop_program:
       cv2.destroyAllWindows()
@@ -210,4 +211,9 @@ async def main():
     await asyncio.sleep(0.1)
 
 if __name__=="__main__":
+  layout_guides = {}
+  for layout_fp in glob.glob(os.path.join("data", "user", "coast", "*.png")):
+    layout_id = int(os.path.relpath(layout_fp, os.path.dirname(layout_fp)).split(".png")[0])
+    layout_guides[layout_id] = np.array(Image.open(layout_fp))
+
   asyncio.run(main())

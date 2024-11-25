@@ -76,7 +76,7 @@ async def minimap_to_layout(reader: asyncio.StreamReader, writer: asyncio.Stream
 async def run_server(hostname, port: int):
   models = {
     "UNet": AttentionUNet("AttentionUNet8_8600", depth=3).load(),
-    "ViT": ViT("ViT5", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
+    "ViT": ViT("ViT6_189_7", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
     #"ViT": ViT("ViT3_799", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load(),
   }
   warmup = models["UNet"].batch_inference(np.random.randint(0, 256, size=(32*10, 32*10, 3), dtype=np.uint8), chunk_size=32)

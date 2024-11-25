@@ -15,50 +15,18 @@ from multiprocessing import Process, Queue
 from dataclasses import dataclass
 
 """
-New dataloader:
+ideas to further improve vit (achieves ~75% accuracy with challenging test cases; random is 1/9 = 11%):
+- identify failing test cases, add more paths to training dataset based on failing test cases
+- dropout at classification stage
 
-# Prerequisite: convert layout.png to layout mask (mask.npz) by running this script, `python training_data.py`
+- jitter position coordinates or embeds (be consistent in x and y directions for all patches)
+- dropout and jitter paths
+- jitter individual pixels in masks
+- deeper/more patch embedding params
+- transformer block params
 
-- load filepaths to layout mask (npz) / paths (npz) pairs
-- schedule epochs / steps, with class balance on each step
-- each step specifies mask/path pairs which are subsets of the total
-for each epoch:
-  for each batch (step):
-    for each mask/path pair in batch:
-      load mask.npz -> np.ndarray
-      load path.npz -> np.ndarray
-      mask + path + mask origin -> patches, np.ndarray
-  zero_grad, ViT(patches), backward, step
-
-use multiprocessing to run training while preloading batches in parallel
-
-- Load all mask filepaths, and paths into memory (small footprint)
---- load all mask origins: same as original image origins
-- For each epoch, schedule mask fp/path pairs into steps, randomly but with class balance
-- Only training process exists initially, and computes the schedule
-- Complete training schedule is computed before training and sent to separate process (loader process)
-- Loader process loads up to N steps of data in advance, which is ready immediately when needed by training process
-
-############
-
-Data sketch:
-
-mask np.ndarray; shape (y, x)
-mask_origin np.ndarray; shape (2,)
-paths Dict[path_id str, path np.ndarray] 
-path np.ndarray; shape (N_points, 2)
-
-# batch of mask/path pairs
-[
-  (mask1, path1),
-  (mask2, path2),
-]
-
-# each mask/path pair gives a set of N 32x32 pixel patches, last axis has 0/1 at 0th element, y,x coords at 1st/2nd elements
-[(N_1,32,32,3), (N_2,32,32,3), ...]
-
-# each patch set of N patches is padded with mask token to 128 patches (or truncated if N > 128)
-Tensor(batch_size, 128,...)
+- acquire more raw layout instances
+- improve minimap masking by UNet
 """
 
 # mask-path pairs are the highest level unit of data for training

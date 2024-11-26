@@ -91,10 +91,11 @@ async def consume_minimap(state: AsyncState):
       assert False
     print(f"layout_id = {layout_id}")
     layout_guide = layout_guides[layout_id]
+    layout_guide_bgr = cv2.cvtColor(layout_guide, cv2.COLOR_RGB2BGR)
     cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
     cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
     #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
-    cv2.imshow('Overlay', layout_guide)
+    cv2.imshow('Overlay', layout_guide_bgr)
     cv2.waitKey(1)
 
     if state.stop_stream or state.stop_program:

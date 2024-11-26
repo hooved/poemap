@@ -6,6 +6,7 @@ from helpers import shrink_with_origin
 import numpy as np
 import cv2
 from PIL import Image
+from typing import Dict
 
 class AsyncState:
   def __init__(self):
@@ -90,13 +91,7 @@ async def consume_minimap(state: AsyncState):
       Image.fromarray(minimap).save("failed_minimap.png")
       assert False
     print(f"layout_id = {layout_id}")
-    layout_guide = layout_guides[layout_id]
-    layout_guide_bgr = cv2.cvtColor(layout_guide, cv2.COLOR_RGB2BGR)
-    cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
-    cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
-    #cv2.moveWindow('Overlay', 3840-minimap.shape[1], 700)
-    cv2.imshow('Overlay', layout_guide_bgr)
-    cv2.waitKey(1)
+    display_layout(layout_guides[layout_id])
 
     if state.stop_stream or state.stop_program:
       cv2.destroyAllWindows()
@@ -104,6 +99,19 @@ async def consume_minimap(state: AsyncState):
       writer.close()
       await writer.wait_closed()
       return
+
+def display_layout(layout: np.ndarray, max_width=1200, max_height=1000):
+    height, width = layout.shape[:2]
+    scale = min(max_width / width, max_height / height)
+    new_width = int(width * scale)
+    new_height = int(height * scale)
+    layout_resized = cv2.resize(layout, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+    cv2.namedWindow('Overlay', cv2.WINDOW_NORMAL)
+    cv2.resizeWindow('Overlay', new_width, new_height)
+    cv2.setWindowProperty('Overlay', cv2.WND_PROP_TOPMOST, 1)
+    cv2.imshow('Overlay', cv2.cvtColor(layout_resized, cv2.COLOR_RGB2BGR))
+    cv2.waitKey(1)
 
 async def send_header(writer: asyncio.StreamWriter, header: ClientHeader):
   writer.write(header.to_bytes(4, byteorder="big"))

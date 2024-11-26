@@ -1,4 +1,4 @@
-import os, math, copy, random, glob
+import os, math, json, random, glob
 from pathlib import Path
 from collections import defaultdict
 #from stream.client import draw_minimap, get_moves
@@ -50,6 +50,7 @@ class MaskPath:
 
 @dataclass(frozen=True)
 class RealSample:
+  tokens_fp: str
   layout_id: int
   tokens: Tensor
   pe: Tensor
@@ -180,14 +181,25 @@ class ViTDataLoader:
       for X, Y in zip(X_steps, Y_steps):
         yield pad_batch(maskpaths_to_tensors(X), Y, target_bs)
 
-  def load_test_data(self, token_cutoff=50) -> List[RealSample]:
-    test_tokens = set(glob.glob(os.path.join(self.test_dir, "*", "*", "*_tokens.npz"))) 
+  def load_test_data(self, token_cutoff=50, curated=True) -> List[RealSample]:
+    # curated samples were deemed upon examination to be classifiable by a human expert, yet aren't trivial examples
+    if not curated:
+      tokens_fps = set(glob.glob(os.path.join(self.test_dir, "*", "*", "*_tokens.npz"))) 
+    else:
+      tokens_fps = set()
+      with open(os.path.join(self.test_dir, "curation_mask.json")) as f:
+        curation_mask = json.load(f)
+      for layout_id, instances in curation_mask.items():
+        for instance_id, timestamps in instances.items():
+          tokens_fps = tokens_fps.union(set(f"{os.path.join(self.test_dir, layout_id, instance_id, ts)}_tokens.npz" for ts in timestamps))
+
     test_data = []
-    for tokens_fp in test_tokens:
+    for tokens_fp in tokens_fps:
+      # TODO: below 2 lines are redundant with curation mask loading code, but is currently needed if not using curation mask
       layout_dir = os.path.dirname(os.path.dirname(tokens_fp))
       layout_id = int(os.path.relpath(layout_dir, self.test_dir))
       tokens, pe = tensorize_tokens(np.load(tokens_fp)['data'], self.embed_dim)
-      test_data.append(RealSample(layout_id, tokens, pe))
+      test_data.append(RealSample(tokens_fp, layout_id, tokens, pe))
     return test_data
 
   def get_test_data(self):

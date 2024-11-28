@@ -1,53 +1,49 @@
 import os, math, json, random, glob
-from pathlib import Path
 from collections import defaultdict
-#from stream.client import draw_minimap, get_moves
 import numpy as np
 from PIL import Image
-from helpers import shrink_with_origin, pad_to_square_multiple
+from helpers import pad_to_square_multiple
 from models import AttentionUNet
 from typing import DefaultDict, List, Dict, Tuple
 from scipy.ndimage import convolve
-import time
 from tqdm import tqdm
 from tinygrad import Tensor
 from multiprocessing import Process, Queue
 from dataclasses import dataclass
 
 """
-ideas to further improve vit (achieves ~75% accuracy with challenging test cases; random is 1/9 = 11%):
-- identify failing test cases, add more paths to training dataset based on failing test cases
-- dropout at classification stage
+ideas to further improve accuracy for layout classification by the ViT:
 
+- add more paths to training dataset based on failing test cases
 - jitter position coordinates or embeds (be consistent in x and y directions for all patches)
 - dropout and jitter paths
 - jitter individual pixels in masks
-- deeper/more patch embedding params
+- patch embeddings: more depth/params, different convolutions, etc.
 - transformer block params
-
 - acquire more raw layout instances
 - improve minimap masking by UNet
 """
 
-# mask-path pairs are the highest level unit of data for training
-# each mask-path pair is converted to a token sequence for ViT forward pass
+# Mask-path pairs are the highest level unit of data for training, and are synthetic due to the paths being sampled outside of game
+# The raw screen pixels of each entire revealed layout screenshot were converted to a binary **mask** of map lines
+# **Paths** were drawn through the complete layouts to simulate player exploration through fog of war
+# Each mask-path pair is converted to a token set for ViT forward pass
 class MaskPath:
   def __init__(self, layout_id: int, instance_id: int, path_id: int, 
                mask: np.ndarray, origin: np.ndarray, path: np.ndarray, embed_dim: int):
 
     self.layout_id, self.instance_id, self.path_id = layout_id, instance_id, path_id
     self.mask, self.origin, self.path, self.embed_dim = mask, origin, path, embed_dim
-
     self.tokens, self.pe = None, None # lazy loading; these are realized later
 
   def load(self):
     if self.tokens is not None and self.pe is not None: return self.tokens, self.pe
     revealed = explore_map(self.mask, self.path)
-    #Image.fromarray(revealed * 255, mode="L").save("mp1.png")
     self.tokens = tokenize_mask(revealed, self.origin)
     self.tokens, self.pe = tensorize_tokens(self.tokens, self.embed_dim)
     return self.tokens, self.pe
 
+# Represents a real sample taken live in game; not generated using a hand-drawn path like in MaskPath
 @dataclass(frozen=True)
 class RealSample:
   tokens_fp: str
@@ -100,10 +96,9 @@ class ViTDataLoader:
         data[layout_id][instance_id].append(mp)
     return data
 
-  # split along layout instance mask axis (which is a higher level than paths through a layout instance)
   def train_test_split(self):
-    """
     self.train_data = self.data.copy()
+    """
     self.test_data = defaultdict(lambda: defaultdict(list))
     for layout_id in self.train_data:
       for _ in range(self.test_layout_split):
@@ -111,12 +106,10 @@ class ViTDataLoader:
         instance_data = self.train_data[layout_id].pop(instance_id)
         self.test_data[layout_id][instance_id] = instance_data
     """
-    self.train_data = self.data.copy()
     #self.test_data = self.load_maskpath_db(paths_handle="paths_test.npz")
 
     # current training data is not identical to test time data; training data is synthetic due to drawing paths in MSPaint to simulate real paths
-    # current test data is identical to what the user will be feeding to the model
-
+    # however, current test data is identical to what the user will be feeding to the model
     self.test_data = self.load_test_data()
 
   def schedule_epoch(self, min_samples_per_class_per_step=1) -> Tuple[List[List]]:
@@ -167,7 +160,7 @@ class ViTDataLoader:
 
   def get_epoch(self, min_samples_per_class_per_step=5):
     X_steps, Y_steps = self.schedule_epoch(min_samples_per_class_per_step)
-    # pad for consistent batch size, for jit acceleration
+    # pad for consistent batch size
     target_bs = max(len(step) for step in X_steps)
 
     if not self.all_data_realized:
@@ -181,7 +174,7 @@ class ViTDataLoader:
       for X, Y in zip(X_steps, Y_steps):
         yield pad_batch(maskpaths_to_tensors(X), Y, target_bs)
 
-  def load_test_data(self, token_cutoff=50, curated=True) -> List[RealSample]:
+  def load_test_data(self, curated=True) -> List[RealSample]:
     # curated samples were deemed upon examination to be classifiable by a human expert, yet aren't trivial examples
     if not curated:
       tokens_fps = set(glob.glob(os.path.join(self.test_dir, "*", "*", "*_tokens.npz"))) 
@@ -208,7 +201,7 @@ class ViTDataLoader:
     Y = Tensor([sample.layout_id for sample in self.test_data], requires_grad=False)
     return X, Y
 
-  def ___old_get_test_data(self):
+  def get_maskpath_test_data(self):
     layout_to_samples = flatten_instances(self.test_data)
     X: List[MaskPath] = []
     for samples in layout_to_samples.values():
@@ -260,18 +253,13 @@ def count_samples(layout_to_samples: Dict[int, List]):
     
 get_frame_id = lambda x: int(os.path.splitext(x)[0])
 
-def tensorize_tokens(tokens: np.ndarray, embed_dim):
+def tensorize_tokens(tokens: np.ndarray, embed_dim: int):
   pe = Tensor(get_2d_pos_embed(tokens, embed_dim), requires_grad=False)
   # Throw out last two elements of last axis, which contained x,y-coord data
   # Now layout is only zeroes and ones
   tokens = tokens[:,:,:,0].astype(np.bool)
   tokens = Tensor(tokens, requires_grad=False).unsqueeze(-1).permute(0,3,1,2)
   return tokens, pe
-
-# extract middle of 4k frame
-# player icon is at 1920, 1060, in 4k
-def crop_frame(frame: np.ndarray, box_radius: int):
-  return frame[1060-box_radius: 1060+box_radius, 1920-box_radius: 1920+box_radius, :]
 
 def prepare_training_data(data_dir, model):
   # compute tokens for complete layouts
@@ -287,17 +275,6 @@ def prepare_training_data(data_dir, model):
     # save mask of map features for visualization
     Image.fromarray(mask * 255, mode="L").save(os.path.join(wd, f"{num}_mask.png"))
     np.savez_compressed(os.path.join(wd, f"{num}.npz"), data=tokens)
-
-def crop_to_content(image):
-  white_pixels = np.argwhere(image == 1)
-  #assert len(white_pixels) > 0
-  if len(white_pixels) == 0:
-    # TODO: handle empty images downstream
-    return image, (0, 0)
-  y_min, x_min = white_pixels.min(axis=0)
-  y_max, x_max = white_pixels.max(axis=0)
-  cropped_image = image[y_min:y_max+1, x_min:x_max+1]
-  return cropped_image, (y_min, x_min)
 
 def clean_sparse_pixels(image, threshold=3, neighborhood_size=8):
   # Create a kernel for counting neighbors
@@ -328,8 +305,6 @@ def extract_map_features(minimap, origin, model, threshold, neighborhood_size):
   minimap, origin = pad_with_origin(minimap, origin, 32)
   pred = model.batch_inference(minimap, chunk_size=32)
   pred = clean_sparse_pixels(pred, threshold=threshold, neighborhood_size=neighborhood_size)
-  #pred, offsets = crop_to_content(pred)
-  #origin = tuple(int(val - offset) for val, offset in zip(origin, offsets))
   return pred, origin
 
 # Chunk the map into square patches, label each patch with y,x positions relative to origin
@@ -378,22 +353,28 @@ def distance_sort(tokens):
   # tokens now has new element at end of last axis: euclidean distance from origin
   return tokens
 
+def tokenize_mask(mask: np.ndarray, origin: np.ndarray):
+  patches = get_patches(mask, origin)
+  tokens = get_tokens(patches)
+  tokens = distance_sort(tokens)
+  return tokens
+
 def tokenize_minimap(minimap: np.ndarray, origin: np.ndarray, model):
   # minimap: color image of shape (vertical, horizontal, 3)
   assert len(minimap.shape) == 3 and minimap.shape[2] == 3 and minimap.dtype == np.uint8
   # origin: y,x coordinates of layout entrance, y is pixels down from image top, x is pixels right from image left
   assert origin.shape == (2,) and origin.dtype == np.uint32
-  minimap, origin = extract_map_features(minimap, origin, model, threshold=10, neighborhood_size=15)
-  patches = get_patches(minimap, origin)
-  tokens = get_tokens(patches)
-  tokens = distance_sort(tokens)
-  return tokens, minimap
 
-# Simulate exploring fog of war on a map, following given path
+  mask, origin = extract_map_features(minimap, origin, model, threshold=10, neighborhood_size=15)
+  tokens = tokenize_mask(mask, origin)
+  return tokens, mask
 
-# light_radius: real in game radius is an oval, height from center = 120 px, width from center = 140 px (4k resolution)
-# Our masks are downsampled by 2x in each dimension from 4k, so that would be vertical_radius = 60, horizontal_radius = 70
-# For simplicity, use circular light radius of 65 px when sampling mask with path
+"""
+Simulate exploring fog of war on a map, following given path
+light_radius: real in game radius is an oval, height from center = 120 px, width from center = 140 px (4k resolution)
+Our masks are downsampled by 2x in each dimension from 4k, so that would be vertical_radius = 60, horizontal_radius = 70
+For simplicity, use circular light radius of 65 px when sampling mask with path
+"""
 def explore_map(no_fog_map: np.ndarray, path: np.ndarray, light_radius=65):
   # add fog of war over entire map
   revealed = np.zeros_like(no_fog_map)
@@ -419,12 +400,6 @@ def explore_map(no_fog_map: np.ndarray, path: np.ndarray, light_radius=65):
     )
   return revealed
 
-def tokenize_mask(mask: np.ndarray, origin: np.ndarray):
-  patches = get_patches(mask, origin)
-  tokens = get_tokens(patches)
-  tokens = distance_sort(tokens)
-  return tokens
-
 # frequencies (denoms) based on poe-learning-layouts 1d positions embeds for time
 # Here we are trying to embed the 2d position of the patch relative to the map entrance
 # We want to encode any possible (x,y) position where x and y are any integer
@@ -443,13 +418,5 @@ def get_2d_pos_embed(tokens, dim):
   return embeds.astype(np.float32)
 
 if __name__=="__main__":
-
-  #model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
-  #prepare_training_data("data/train", model)
-  dl = ViTDataLoader(data_dir="data/train", test_dir="data/test")
-  #for _ in range(10):
-    #t1 = time.perf_counter()
-    #X_steps, Y_steps = dl.get_epoch(min_samples_per_class_per_step=5)
-    #print(f"elapsed: {(time.perf_counter() - t1):0.3f}")
-
-  done = 1
+  model = AttentionUNet("AttentionUNet8_8600", depth=3).load()
+  prepare_training_data("data/train", model)

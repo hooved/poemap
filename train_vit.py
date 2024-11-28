@@ -1,7 +1,6 @@
 from models import ViT
-import numpy as np
-from tinygrad import Tensor, nn, dtypes, TinyJit
-from tinygrad.nn.state import safe_load, safe_save, get_state_dict, load_state_dict
+from tinygrad import Tensor, nn, TinyJit
+from tinygrad.nn.state import safe_save, get_state_dict
 from training_data import ViTDataLoader
 from typing import List, Tuple
 

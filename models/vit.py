@@ -2,12 +2,11 @@
 # https://github.com/tinygrad/tinygrad/blob/master/extra/models/vit.py and transformer.py
 # https://github.com/kweimann/poe-learning-layouts/blob/main/model.py
 
-from tinygrad import Tensor, dtypes, TinyJit
-from tinygrad.nn import Conv2d, Linear, GroupNorm
+from tinygrad import Tensor, TinyJit
+from tinygrad.nn import Conv2d
 from tinygrad.nn.state import safe_load, load_state_dict
 import numpy as np
 from typing import List, Tuple
-from models.UNet import ResBlock
 
 # adapted from tinygrad ViT code
 class ViT:
@@ -27,22 +26,25 @@ class ViT:
     self.jit_inference = None
     self.jit_shape = None
 
-  def prep_tokens(self, x: List[Tuple[Tensor]]) -> Tensor:
+  """
+  input x: list of (tokens: Tensor, position_embedding: Tensor) pairs, each derived from a minimap sample
+  returns: Tensor with shape (len(x), self.max_tokens, self.embed_dim)
 
-    # pad each tensor in x with mask tokens, then batch together
-    # TODO: batch layouts with same # non-mask tokens? lots of uneven batches grouped together here
+  Here we pad (or truncate) token sets of varying lengths to a consistent length, for batching multiple samples
+  """
+  def prep_tokens(self, x: List[Tuple[Tensor]]) -> Tensor:
     prepped = []
-    for layout, pe in x:
-      layout = self.embedding(layout).add(pe)
-      if layout.shape[0] < self.max_tokens:
-        mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - layout.shape[0], 1))
-        prepped.append(layout.cat(mask_tokens, dim=0))
+    for tokens, pe in x:
+      tokens = self.embedding(tokens).add(pe)
+      if tokens.shape[0] < self.max_tokens:
+        mask_tokens = self.mask_token.add(Tensor.zeros(self.max_tokens - tokens.shape[0], 1))
+        prepped.append(tokens.cat(mask_tokens, dim=0))
       else:
         # Use closest tokens to origin, which more represent training data
         # Current assumption is that these tokens are ordered by euclidean distance from origin,
         #  based on implementation of training_data.tokenize_minimap (with distance_sort at end)
         # TODO: should we randomly sample instead of using tokens closest to origin?
-        prepped.append(layout[0:self.max_tokens])
+        prepped.append(tokens[0:self.max_tokens])
 
     return Tensor.stack(*prepped)
 
@@ -52,7 +54,6 @@ class ViT:
     x = x.layernorm().linear(*self.encoder_norm)
     x = x[:, 0].linear(*self.head)
     return x
-    #return x.realize()
 
   @TinyJit
   def jit_run(self, x: Tensor):
@@ -78,30 +79,13 @@ class ViT:
     load_state_dict(self, state_dict)
     return self
 
-class GlobalAvgPool2d:
-  def __call__(self, x:Tensor) -> Tensor:
-    # N, C, H, W  ->  N, C
-    x = x.reshape(*x.shape[0:2], x.shape[2] * x.shape[3]) # N, C, H*W
-    return x.mean(axis=-1)
-
 class PatchEmbed:
   def __init__(self):
+    # 32x32 patch gives 256-dimensional embedding
     self.l1 = Conv2d(1, 64, kernel_size=(16,16), stride=16)
-    """
-    self.units = [
-      Conv2d(1, 64, kernel_size=3, padding=1), 
-      #ResBlock(64, 64), ResBlock(64, 256),
-      ResBlock(64, 256),
-      GroupNorm(256//16, 256), Tensor.relu, GlobalAvgPool2d(),
-      #Conv2d(64, 1, kernel_size=3, padding=1), Tensor.relu,
-    ]
-    """
 
   def __call__(self, x:Tensor) -> Tensor:
-    # 1 * 32 * 32 --> 256
     return self.l1(x).relu().flatten(1).dropout(0.3)
-
-    #return x.sequential(self.units).dropout(0.3)
 
 # frequencies (denoms) based on poe-learning-layouts 1d positions embeds for time
 # Here we are trying to embed the 2d position of the patch relative to the map entrance
@@ -158,16 +142,3 @@ class TransformerBlock:
       x = x + self.act(x.linear(*self.ff1)).linear(*self.ff2).dropout(self.dropout)
       x = x.layernorm().linear(*self.ln2)
     return x
-
-if __name__=="__main__":
-  from tinygrad.nn.state import safe_load, load_state_dict
-  model = ViT(9, max_tokens=128, layers=3, embed_dim=256, num_heads=4)
-  model_name = "ViT1"
-  state_dict = safe_load(f"data/model/{model_name}.safetensors")
-  load_state_dict(model, state_dict)
-
-  x = np.load("data/train/3/2/1.npz")['data']
-  pred = model([x])
-  print(pred.numpy())
-  pred = pred.argmax(axis=1).cast(dtypes.uint8).numpy()
-  print(pred)

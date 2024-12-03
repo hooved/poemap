@@ -2,12 +2,14 @@ demo video link
 
 The above video demonstrates real-time automated prediction of map structure (layout) in Path of Exile, using ML models/software from this repo.
 
-Every player in Path of Exile must decide "where to go" through each game area. For most game areas, a layout is randomly selected from roughly 5-15 layouts, so knowing where to go is not as simple as consulting a single map for each area. Per player, this task occurs dozens (or sometimes hundreds or thousands) of times per playthrough, multiple playthroughs per year -- for a six-figure number of players. More generally, this is a common task in the ARPG genre, which spans multiple other popular game franchises developed over the past 30 years.
-
 To predict map layout, the only game data used here are pixels from the screen. The ML models are trained on a collection of such data. All data and models are made available here through links to huggingface. Tools used to collect and curate data are also provided here.
 
 ![Example of Input and Output](https://huggingface.co/datasets/hooved/poemap/resolve/main/readme/input_output.png?raw=True)
 ![All Possible Layouts](https://huggingface.co/datasets/hooved/poemap/resolve/main/readme/layout_collage.png?raw=True)
+
+Every player in Path of Exile must decide "where to go" through each game area. For most game areas, a layout is randomly selected from roughly 5-15 layouts, so knowing where to go is not as simple as consulting a single map for each area. Per player, this task occurs dozens (or sometimes hundreds or thousands) of times per playthrough, multiple playthroughs per year -- for a six-figure number of players. More generally, this is a common task in the ARPG genre, which spans multiple other popular game franchises developed over the past 30 years.
+
+# Contents
 
 - [Disclaimer](#disclaimer)
 - [Relation to Prior Work](#relation-to-prior-work)

@@ -7,6 +7,7 @@ Every player in Path of Exile must decide "where to go" through each game area. 
 To predict map layout, the only game data used here are pixels from the screen. The ML models are trained on a collection of such data. All data and models are made available here through links to huggingface. Tools used to collect and curate data are also provided here.
 
 ![Example of Input and Output](https://huggingface.co/datasets/hooved/poemap/resolve/main/readme/input_output.png?raw=True)
+![All Possible Layouts](https://huggingface.co/datasets/hooved/poemap/resolve/main/readme/layout_collage.png?raw=True)
 
 - [Disclaimer](#disclaimer)
 - [Relation to Prior Work](#relation-to-prior-work)

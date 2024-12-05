@@ -142,3 +142,12 @@ class TransformerBlock:
       x = x + self.act(x.linear(*self.ff1)).linear(*self.ff2).dropout(self.dropout)
       x = x.layernorm().linear(*self.ln2)
     return x
+
+if __name__=="__main__":
+  from training_data import tensorize_tokens
+  model = ViT("ViT6_219_15", num_classes=9, max_tokens=128, layers=3, embed_dim=256, num_heads=4).load()
+  tokens = np.load("data/test/4/1/7_tokens.npz")['data']
+  tokens, pe = tensorize_tokens(tokens, model.embed_dim)
+  input = [(tokens, pe)]
+  layout_id = model(input).argmax().item()
+  print(f"predicted layout_id: {layout_id}")

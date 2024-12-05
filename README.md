@@ -54,7 +54,7 @@ I made this project to gain experience building interesting/useful stuff with ML
 
 The user starts the application by launching two python scripts, `stream/server.py` and `stream/client.py`, see [How to reproduce](#how-to-reproduce).
 
-Then when the user presses `Ctrl+Alt+q`, the client program `stream/client.py` starts reading streamed 4k video frames from the live game at a low framerate. The y,x coordinates on the map where the user initiated the stream is recorded as the `origin`, which is used later for calculating 2D position embeddings. The client stitches these frames together into a minimap, which should be identical to the minimap that the player has revealed on screen. The streaming framerate just needs to be high enough to capture all the new minimap details being revealed, which always happens in the center of the screen, so we only process a central square of each frame. Even 0.5 frames per second is sufficient to keep up with rapid player movement in the demo, who was using Mageblood with optimized quicksilver/silver flasks, as a berserker leap-slamming with high attack speed weapons.
+Then when the user presses `Ctrl+Alt+q`, the client program `stream/client.py` starts reading streamed 4k video frames from the live game at a low framerate. Based on the assumption that the minimap is centered on the screen, and therefore the player's map icon is always at the center of the screen, the y,x coordinates on the map where the user initiated the stream is recorded as the `origin`, which is used later for calculating 2D position embeddings. The client stitches these frames together into a minimap, which should be identical to the minimap that the player has revealed on screen. The streaming framerate just needs to be high enough to capture all the new minimap details being revealed, which always happens in the center of the screen, so we only process a central square of each frame. Even 0.5 frames per second is sufficient to keep up with rapid player movement in the demo, who was using Mageblood with optimized quicksilver/silver flasks, as a berserker leap-slamming with high attack speed weapons.
 
 We need to track the accumulated minimap, the most recent frame, the most recent y,x position, and the map entrance `origin` y,x coordinates in memory. Each new frame is compared against the previous frame using the `find_translation` function from [`poe-learning-layouts/utils/data.py`](https://github.com/kweimann/poe-learning-layouts/blob/main/utils/data.py), which determines the translation vector between frames. Then we can figure out how to append each new frame to the accumulated minimap. The client then shrinks the 4k minimap to 1080p resolution (for efficiency), and sends the shrunk minimap and origin coordinates to the server for ML model inference.
 
@@ -137,15 +137,20 @@ The GPU I used is an NVIDIA RTX 3080 with 10 GB of VRAM, which is more than enou
 
 The game was rendered in full-screen at 4k resolution (2160 height, 3840 width). Ground loot and life bars were hidden to make things as simple as possible. The below settings were used for minimap display.
 
+![Map Display Settings](https://huggingface.co/datasets/hooved/poemap/resolve/main/readme/map_settings.png?raw=True)
+
 ## Installation
 
 - Make separate venvs for server (on WSL2) and client (on Windows).
 - On WSL2, install the server venv in the repo's root dir with `pip install -r requirements.txt`.
 - On Windows, install the client venv in the `stream` dir with `pip install -r stream/requirements_client.txt`.
 
-## Using pretrained models
+## Downloading models and data
 
-- Download the models from huggingface with `python get_data.py --models-only`.
+All models and data are stored as a submodule in the `data` directory of this repo, which points to a huggingface repo.
+
+- Download data and models by populating the `data` submodule: `git submodule update --init --recursive`
+- Current dataset size is about 0.5 GB
 
 ## Running the program
 
@@ -163,7 +168,6 @@ The game was rendered in full-screen at 4k resolution (2160 height, 3840 width).
 
 ## Training models from scratch with existing data
 
-- Download all data and models from huggingface with `python get_data.py`.
 - Activate server venv (see [Installation](#installation))
 - Train the UNet with `python train_unet.py`
 - Train the ViT with `python train_vit.py`

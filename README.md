@@ -1,4 +1,4 @@
-demo video link 
+[Demo video link](https://www.youtube.com/watch?v=y6tOJ2kwwfA)
 
 The above video demonstrates real-time automated prediction of map structure (layout) in Path of Exile, using ML models/software from this repo.
 
